@@ -164,9 +164,9 @@ def main():
 
     return {
         "ppl_sci_base": ppl_sci_base, "ppl_cre_base": ppl_cre_base,
-        "ppl_sci_A": ppl_sci_A,       "ppl_sci_B": ppl_sci_B,
-        "ppl_cre_B": ppl_cre_B,       "ppl_sci_M": ppl_sci_M,
-        "ppl_cre_M": ppl_cre_M,
+        "ppl_sci_A": ppl_sci_A,       "ppl_cre_A": ppl_cre_A,
+        "ppl_sci_B": ppl_sci_B,       "ppl_cre_B": ppl_cre_B,
+        "ppl_sci_M": ppl_sci_M,       "ppl_cre_M": ppl_cre_M,
         "history_a": history_a,       "history_b": history_b,
     }
 

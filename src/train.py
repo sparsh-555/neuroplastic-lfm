@@ -1,7 +1,8 @@
 import torch
 import torch.nn.functional as F
+from itertools import cycle
 from torch.utils.data import DataLoader
-from typing import Dict, List, Optional
+from typing import Dict, List
 from tqdm import tqdm
 from src.model import NeuroplasticLFM
 
@@ -43,14 +44,14 @@ def train_cluster(
     model.base.eval()
 
     history = []
-    step = 0
+    device = next(cluster.parameters()).device
 
-    for batch in tqdm(dataloader, desc=f"cluster[{task_id}]"):
+    for step, batch in enumerate(tqdm(cycle(dataloader), total=max_steps, desc=f"cluster[{task_id}]")):
         if step >= max_steps:
             break
 
-        input_ids = batch["input_ids"].to(next(cluster.parameters()).device)
-        labels = batch["labels"].to(input_ids.device)
+        input_ids = batch["input_ids"].to(device)
+        labels = batch["labels"].to(device)
 
         logits = model(input_ids, task_id=task_id)  # (B, L, V)
         loss = F.cross_entropy(
@@ -71,7 +72,5 @@ def train_cluster(
             history.append(record)
             τ_str = f"  τ_a={τ_info.get('time_a_mean', 0):.4f}" if τ_info else ""
             print(f"  step={step:4d}  loss={loss.item():.4f}  gate={gate:.4f}{τ_str}")
-
-        step += 1
 
     return history
