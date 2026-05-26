@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from typing import List
 from src.cluster import CfCCluster
 from src.registry import ClusterRegistry
@@ -49,7 +48,9 @@ def ties_merge(
 
     merged_state = {}
     for key in base_init:
-        θ_init = base_init[key].float()
+        # base_init is stored on CPU; bring it to the same device as the trained weights
+        device = state_a[key].device
+        θ_init = base_init[key].float().to(device)
         if key not in param_keys:
             # Fixed buffer — identical across clusters, copy from base
             merged_state[key] = θ_init.to(base_init[key].dtype)
