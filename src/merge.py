@@ -62,6 +62,7 @@ def ties_merge(
 
     merged_cluster = CfCCluster(seed=0)
     merged_cluster.load_state_dict(merged_state)
+    merged_cluster.to(registry.get(task_a).adapter_in.weight.device)
 
     for param in merged_cluster.parameters():
         param.requires_grad = False
