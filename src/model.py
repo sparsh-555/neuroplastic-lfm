@@ -17,7 +17,10 @@ class NeuroplasticLFM(nn.Module):
             param.requires_grad = False
 
     def spawn_cluster(self, task_id: str):
-        return self.registry.spawn(task_id)
+        cluster = self.registry.spawn(task_id)
+        device = next(self.base.parameters()).device
+        cluster.to(device)
+        return cluster
 
     def forward(
         self,
