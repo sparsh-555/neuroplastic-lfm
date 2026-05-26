@@ -20,14 +20,15 @@ MAX_STEPS = 300
 
 
 def finetune(model, dataloader, max_steps: int = MAX_STEPS, lr: float = 3e-4) -> None:
+    device    = next(model.parameters()).device
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     model.train()
     step = 0
     for batch in tqdm(dataloader, desc="fine-tuning"):
         if step >= max_steps:
             break
-        input_ids = batch["input_ids"]
-        labels    = batch["labels"]
+        input_ids = batch["input_ids"].to(device)
+        labels    = batch["labels"].to(device)
         logits    = model(input_ids).logits
         loss      = F.cross_entropy(
             logits[:, :-1].contiguous().view(-1, logits.size(-1)),
@@ -43,11 +44,12 @@ def finetune(model, dataloader, max_steps: int = MAX_STEPS, lr: float = 3e-4) ->
 
 @torch.no_grad()
 def compute_ppl(model, dataloader) -> float:
+    device = next(model.parameters()).device
     model.eval()
     total_loss, total_tokens = 0.0, 0
     for batch in dataloader:
-        input_ids = batch["input_ids"]
-        labels    = batch["labels"]
+        input_ids = batch["input_ids"].to(device)
+        labels    = batch["labels"].to(device)
         logits    = model(input_ids).logits
         loss      = F.cross_entropy(
             logits[:, :-1].contiguous().view(-1, logits.size(-1)),

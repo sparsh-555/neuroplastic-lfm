@@ -20,7 +20,7 @@ class CfCCluster(nn.Module):
         self.maturity    = nn.Parameter(torch.full((1,), -6.0))
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
-        # hidden: (B, L, BASE_DIM) — may be float16 from base model
+        # hidden: (B, L, BASE_DIM) — may be bfloat16 from base model
         h      = hidden.float()
         x      = self.adapter_in(h)                                    # (B, L, CLUSTER_DIM)
         h0     = torch.zeros(x.size(0), self.CLUSTER_DIM,

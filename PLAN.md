@@ -183,8 +183,6 @@ neuroplastic-lfm/
 
 ```bash
 pip install transformers ncps torch datasets accelerate
-# If LFM2 not yet in stable transformers:
-pip install git+https://github.com/huggingface/transformers
 ```
 
 Verification:
