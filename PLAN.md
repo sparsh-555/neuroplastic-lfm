@@ -1,6 +1,6 @@
 # Neuroplastic LFM — Implementation Plan
 
-> Dual-axis neuroplasticity on LFM2-1.2B: structural cluster spawning (PNN-style) + functional adaptive τ dynamics (LTC-derived) with TIES-Merging for cluster fusion.
+> Dual-axis neuroplasticity on LFM2.5-1.2B-Instruct: structural cluster spawning (PNN-style) + functional adaptive τ dynamics (LTC-derived) with TIES-Merging for cluster fusion.
 
 ---
 
@@ -32,11 +32,12 @@ This PoC applies the established **expand-and-freeze paradigm** (SEMA, MoCL, HAM
 
 ### Base Model
 
-- **Model**: `LiquidAI/LFM2-1.2B` (HuggingFace)
+- **Model**: `LiquidAI/LFM2.5-1.2B-Instruct` (HuggingFace)
 - **Parameters**: 1.17B, fully frozen during cluster training
 - **Architecture**: 16 blocks — 10 double-gated LIV convolution blocks + 6 GQA blocks
-- **Dimensions**: `hidden_size=2560`, `intermediate_size=12288`, `num_attention_heads=32`, `vocab_size=65536`
-- **Context**: up to 32,768 tokens
+- **Dimensions**: `hidden_size=2048`, `intermediate_size=12288`, `num_attention_heads=32`, `num_key_value_heads=8`, `vocab_size=65536`
+- **Context**: up to 128,000 tokens
+- **Native dtype**: bfloat16
 
 ### Forward Pass Blueprint
 
@@ -44,20 +45,20 @@ This PoC applies the established **expand-and-freeze paradigm** (SEMA, MoCL, HAM
 Input tokens
       ↓
 ╔══════════════════════════╗
-║  LFM2-1.2B  [FROZEN]    ║  hidden_size = 2560
+║  LFM2.5-1.2B  [FROZEN]  ║  hidden_size = 2048
 ║  10× GatedConv           ║
 ║  6× GQA                  ║
 ╚══════════╤═══════════════╝
-           │  hidden_states: (B, L, 2560)
+           │  hidden_states: (B, L, 2048)
            │
-           ├─── adapter_in: Linear(2560 → 64)      ┐
+           ├─── adapter_in: Linear(2048 → 64)      ┐
            │         ↓                              │
            │    [CfC cluster — TRAINABLE]           │  per-task cluster
-           │    AutoNCP(units=64, output=16)         │  ~305K params
+           │    AutoNCP(units=64, output=16)         │  ~187K params
            │    processes tokens recurrently         │
            │    adaptive τ per token (time_a, time_b)│
            │         ↓                              │
-           │    adapter_out: Linear(16 → 2560)      │
+           │    adapter_out: Linear(16 → 2048)      │
            │    maturity_gate: scalar, init=-6.0    ┘
            │              │
            └── h + sigmoid(α) × cluster_output ──→ [LM Head] → logits
@@ -68,8 +69,8 @@ Input tokens
 - **Wiring**: `AutoNCP(units=64, output_size=16, sparsity_level=0.5)`
   - 64 total neurons (inter + command + motor), sparse Erdos-Rényi connectivity
   - 16 motor neurons = cluster output dimension
-- **Input adapter**: `Linear(2560, 64)` — projects base hidden state to CfC sensory input
-- **Output adapter**: `Linear(16, 2560)` — projects CfC motor output to residual space
+- **Input adapter**: `Linear(2048, 64)` — projects base hidden state to CfC sensory input
+- **Output adapter**: `Linear(16, 2048)` — projects CfC motor output to residual space
 - **Maturity gate**: `nn.Parameter(torch.full((1,), -6.0))` → `sigmoid(-6) ≈ 0.002`
   - Adopted from LLaMA-Adapter (Zhang et al., 2023) zero-init gating mechanism
   - Cluster starts with negligible influence; gate opens as training progresses
@@ -120,7 +121,7 @@ Applied to CfC weight vectors (`ff1`, `ff2`, `time_a`, `time_b`, `w_tau`, `A`). 
 ### Experiment Sequence
 
 ```
-1. Load frozen LFM2-1.2B
+1. Load frozen LFM2.5-1.2B-Instruct
 2. Baseline: perplexity on Task A and Task B (no clusters)
 3. spawn_cluster("task_a") → train 500 steps → eval ppl_A, ppl_B
 4. spawn_cluster("task_b") → train 500 steps → eval ppl_A, ppl_B
@@ -189,12 +190,12 @@ pip install git+https://github.com/huggingface/transformers
 Verification:
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
-model = AutoModelForCausalLM.from_pretrained("LiquidAI/LFM2-1.2B", torch_dtype=torch.float16)
+model = AutoModelForCausalLM.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.bfloat16)
 out = model(input_ids, output_hidden_states=True)
-assert out.hidden_states[-1].shape[-1] == 2560
+assert out.hidden_states[-1].shape[-1] == 2048
 ```
 
-**Gate**: hidden states shape `(B, L, 2560)` confirmed → proceed.
+**Gate**: hidden states shape `(B, L, 2048)` confirmed → proceed.
 
 ---
 
@@ -221,7 +222,7 @@ from ncps.torch import CfC
 from ncps.wirings import AutoNCP
 
 class CfCCluster(nn.Module):
-    BASE_DIM, CLUSTER_DIM, MOTOR_DIM = 2560, 64, 16
+    BASE_DIM, CLUSTER_DIM, MOTOR_DIM = 2048, 64, 16
 
     def __init__(self, seed=42):
         wiring           = AutoNCP(64, 16, sparsity_level=0.5, seed=seed)
@@ -230,11 +231,11 @@ class CfCCluster(nn.Module):
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.BASE_DIM)
         self.maturity    = nn.Parameter(torch.full((1,), -6.0))
 
-    def forward(self, hidden):          # (B, L, 2560)
+    def forward(self, hidden):          # (B, L, 2048)
         x       = self.adapter_in(hidden)                     # (B, L, 64)
         h0      = torch.zeros(x.size(0), 64, device=x.device)
         out, _  = self.cfc(x, h0)                            # (B, L, 16)
-        delta   = self.adapter_out(out)                       # (B, L, 2560)
+        delta   = self.adapter_out(out)                       # (B, L, 2048)
         return torch.sigmoid(self.maturity) * delta
 ```
 
@@ -303,10 +304,10 @@ Run full experiment sequence, collect all metrics.
 
 | Setup | VRAM | Notes |
 |---|---|---|
-| LFM2-1.2B FP16 | ~2.5GB | Model weights |
-| CfC cluster (×1) | ~5MB | 305K params |
-| Inference batch=1 | ~4GB | With KV cache |
-| Cluster training batch=4 | ~8GB | AdamW on 305K params only |
+| LFM2.5-1.2B-Instruct BF16 | ~2.3GB | Model weights |
+| CfC cluster (×1) | ~4MB | 187K params |
+| Inference batch=1 | ~4GB | With activations |
+| Cluster training batch=4 | ~6GB | AdamW on 187K params only |
 | **Minimum** | **8GB** | RTX 3070 / Colab T4 |
 | **Comfortable** | **16GB** | RTX 3090 / A10 / Colab A100 |
 

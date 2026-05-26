@@ -66,7 +66,7 @@ def main() -> None:
 
     print("Loading LFM2.5-1.2B-Instruct for naive fine-tuning...")
     model = AutoModelForCausalLM.from_pretrained(
-        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.float32
+        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.bfloat16
     ).to(device)
     tok = AutoTokenizer.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct")
     if tok.pad_token is None:

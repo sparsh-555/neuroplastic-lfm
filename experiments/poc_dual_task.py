@@ -31,25 +31,45 @@ EVAL_SIZE  = 50
 
 class AlpacaDataset(Dataset):
     def __init__(self, records, tokenizer, max_length=MAX_LENGTH):
-        self.records    = records
-        self.tokenizer  = tokenizer
-        self.max_length = max_length
+        self.samples = []
+        for rec in records:
+            instruction = rec.get("instruction", "")
+            inp         = rec.get("input", "")
+            output      = rec.get("output", "")
+            if inp:
+                instruction = f"{instruction}\n\n{inp}"
+
+            full_text = tokenizer.apply_chat_template(
+                [{"role": "user",      "content": instruction},
+                 {"role": "assistant", "content": output}],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            prompt_text = tokenizer.apply_chat_template(
+                [{"role": "user", "content": instruction}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
+            full_enc   = tokenizer(full_text,   add_special_tokens=False,
+                                   truncation=True, max_length=max_length,
+                                   padding="max_length", return_tensors="pt")
+            prompt_enc = tokenizer(prompt_text, add_special_tokens=False,
+                                   truncation=True, max_length=max_length,
+                                   return_tensors="pt")
+
+            ids      = full_enc["input_ids"].squeeze(0)
+            n_prompt = min(prompt_enc["input_ids"].shape[1], max_length)
+            labels   = ids.clone()
+            labels[:n_prompt]                        = -100
+            labels[labels == tokenizer.pad_token_id] = -100
+            self.samples.append({"input_ids": ids, "labels": labels})
 
     def __len__(self):
-        return len(self.records)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        rec   = self.records[idx]
-        text  = (f"### Instruction:\n{rec['instruction']}\n\n"
-                 f"### Response:\n{rec['output']}")
-        enc   = self.tokenizer(
-            text, truncation=True, max_length=self.max_length,
-            padding="max_length", return_tensors="pt",
-        )
-        ids    = enc["input_ids"].squeeze(0)
-        labels = ids.clone()
-        labels[labels == self.tokenizer.pad_token_id] = -100
-        return {"input_ids": ids, "labels": labels}
+        return self.samples[idx]
 
 
 def filter_records(dataset, keywords, n):
@@ -69,7 +89,7 @@ def main():
 
     print("Loading LFM2.5-1.2B-Instruct (frozen base)...")
     base = AutoModelForCausalLM.from_pretrained(
-        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.float32
+        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.bfloat16
     ).to(device)
     tok  = AutoTokenizer.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct")
     if tok.pad_token is None:
