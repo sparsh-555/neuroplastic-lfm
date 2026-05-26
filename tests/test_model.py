@@ -1,5 +1,8 @@
+import math
+
 import torch
 import pytest
+
 from src.model import NeuroplasticLFM
 from tests.conftest import MockLFMBase
 
@@ -93,3 +96,23 @@ def test_train_cluster_reduces_loss_and_gate_opens():
     assert len(history) >= 1
     assert history[0]["loss"] > 0
     assert history[0]["gate"] < 0.01
+
+
+def test_perplexity_returns_positive_finite_float():
+    from torch.utils.data import DataLoader
+    from src.eval import perplexity
+
+    class DictDS(torch.utils.data.Dataset):
+        def __init__(self, n=4, L=8):
+            self.ids = torch.randint(0, MockLFMBase.VOCAB_SIZE, (n, L))
+        def __len__(self): return len(self.ids)
+        def __getitem__(self, i):
+            return {"input_ids": self.ids[i], "labels": self.ids[i].clone()}
+
+    m  = NeuroplasticLFM(MockLFMBase())
+    dl = DataLoader(DictDS(), batch_size=2)
+    ppl = perplexity(m, dl, task_id=None)
+    assert ppl > 0
+    assert ppl < 1e9
+    assert not math.isinf(ppl)
+    assert not math.isnan(ppl)
