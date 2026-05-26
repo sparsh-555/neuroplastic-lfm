@@ -41,16 +41,16 @@ def train_cluster(
     log_every: int = 50,
 ) -> List[Dict]:
     cluster = model.registry.get(task_id)
-    # Maturity gate gets 20× higher lr to break the bootstrapping trap:
+    # Maturity gate gets 5× higher lr to break the bootstrapping trap:
     # sigmoid'(-3) ≈ 0.045 suppresses the gate gradient at every step.
-    # Without a higher lr it takes thousands of steps to open meaningfully.
+    # 5× is enough to open the gate to ~0.3-0.5 without overshooting.
     maturity_params = [cluster.maturity]
     other_params    = [p for n, p in cluster.named_parameters()
                        if p.requires_grad and n != "maturity"]
     optimizer = torch.optim.AdamW(
         [
             {"params": other_params,    "lr": lr},
-            {"params": maturity_params, "lr": lr * 20},
+            {"params": maturity_params, "lr": lr * 5},
         ],
         weight_decay=0.01,
     )
@@ -80,6 +80,9 @@ def train_cluster(
         loss.backward()
         torch.nn.utils.clip_grad_norm_(cluster.parameters(), 1.0)
         optimizer.step()
+        # Hard ceiling: sigmoid(0) = 0.5 → cluster contributes at most 50%
+        # of its output. Prevents the gate from replacing the base model.
+        cluster.maturity.data.clamp_(max=0.0)
 
         if step % log_every == 0:
             gate = torch.sigmoid(cluster.maturity).item()
