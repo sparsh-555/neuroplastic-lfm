@@ -27,9 +27,10 @@ def finetune(model, dataloader, max_steps: int = MAX_STEPS, lr: float = 3e-4) ->
     for batch in tqdm(dataloader, desc="fine-tuning"):
         if step >= max_steps:
             break
-        input_ids = batch["input_ids"].to(device)
-        labels    = batch["labels"].to(device)
-        logits    = model(input_ids).logits
+        input_ids      = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels         = batch["labels"].to(device)
+        logits         = model(input_ids, attention_mask=attention_mask).logits
         loss      = F.cross_entropy(
             logits[:, :-1].contiguous().view(-1, logits.size(-1)),
             labels[:, 1:].contiguous().view(-1),
@@ -48,9 +49,10 @@ def compute_ppl(model, dataloader) -> float:
     model.eval()
     total_loss, total_tokens = 0.0, 0
     for batch in dataloader:
-        input_ids = batch["input_ids"].to(device)
-        labels    = batch["labels"].to(device)
-        logits    = model(input_ids).logits
+        input_ids      = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels         = batch["labels"].to(device)
+        logits         = model(input_ids, attention_mask=attention_mask).logits
         loss      = F.cross_entropy(
             logits[:, :-1].contiguous().view(-1, logits.size(-1)),
             labels[:, 1:].contiguous().view(-1),
@@ -68,7 +70,7 @@ def main() -> None:
 
     print("Loading LFM2.5-1.2B-Instruct for naive fine-tuning...")
     model = AutoModelForCausalLM.from_pretrained(
-        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.bfloat16
+        "LiquidAI/LFM2.5-1.2B-Instruct", dtype=torch.bfloat16
     ).to(device)
     tok = AutoTokenizer.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct")
     if tok.pad_token is None:

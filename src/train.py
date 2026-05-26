@@ -9,18 +9,25 @@ from src.model import NeuroplasticLFM
 
 def extract_tau_stats(cluster) -> Dict[str, float]:
     """
-    Extract adaptive time-constant statistics from CfC cell.
-    time_a and time_b are learned projections that compute τ per token:
+    Extract adaptive time-constant statistics from all CfCCell layers.
+
+    WiredCfCCell (used by AutoNCP) contains layer_0..layer_N, each a CfCCell
+    with time_a and time_b projections that compute the per-token τ:
         t_interp = sigmoid(time_a(x) * ts + time_b(x))
     Watching these evolve during training is the functional neuroplasticity signal.
     """
     try:
         cell = cluster.cfc.rnn_cell
-        return {
-            "time_a_mean": cell.time_a.weight.data.mean().item(),
-            "time_b_mean": cell.time_b.weight.data.mean().item(),
-            "time_a_std": cell.time_a.weight.data.std().item(),
-        }
+        stats: Dict[str, float] = {}
+        for i in range(cell.num_layers):
+            layer = getattr(cell, f"layer_{i}")
+            stats[f"time_a_l{i}_mean"] = layer.time_a.weight.data.mean().item()
+            stats[f"time_b_l{i}_mean"] = layer.time_b.weight.data.mean().item()
+            stats[f"time_a_l{i}_std"]  = layer.time_a.weight.data.std().item()
+        # Aggregate across layers for convenience (used in log line)
+        ta_means = [stats[f"time_a_l{i}_mean"] for i in range(cell.num_layers)]
+        stats["time_a_mean"] = sum(ta_means) / len(ta_means)
+        return stats
     except AttributeError:
         return {}
 
@@ -50,10 +57,11 @@ def train_cluster(
         if step >= max_steps:
             break
 
-        input_ids = batch["input_ids"].to(device)
-        labels = batch["labels"].to(device)
+        input_ids      = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels         = batch["labels"].to(device)
 
-        logits = model(input_ids, task_id=task_id)  # (B, L, V)
+        logits = model(input_ids, task_id=task_id, attention_mask=attention_mask)
         loss = F.cross_entropy(
             logits[:, :-1].contiguous().view(-1, logits.size(-1)),
             labels[:, 1:].contiguous().view(-1),

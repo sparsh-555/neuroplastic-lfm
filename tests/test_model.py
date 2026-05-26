@@ -85,7 +85,11 @@ def test_train_cluster_reduces_loss_and_gate_opens():
             self.ids = torch.randint(0, MockLFMBase.VOCAB_SIZE, (8, 8))
         def __len__(self): return len(self.ids)
         def __getitem__(self, i):
-            return {"input_ids": self.ids[i], "labels": self.ids[i].clone()}
+            return {
+                "input_ids":      self.ids[i],
+                "attention_mask": torch.ones(8, dtype=torch.long),
+                "labels":         self.ids[i].clone(),
+            }
 
     base  = MockLFMBase()
     m     = NeuroplasticLFM(base)
@@ -105,9 +109,14 @@ def test_perplexity_returns_positive_finite_float():
     class DictDS(torch.utils.data.Dataset):
         def __init__(self, n=4, L=8):
             self.ids = torch.randint(0, MockLFMBase.VOCAB_SIZE, (n, L))
+            self.L = L
         def __len__(self): return len(self.ids)
         def __getitem__(self, i):
-            return {"input_ids": self.ids[i], "labels": self.ids[i].clone()}
+            return {
+                "input_ids":      self.ids[i],
+                "attention_mask": torch.ones(self.L, dtype=torch.long),
+                "labels":         self.ids[i].clone(),
+            }
 
     m  = NeuroplasticLFM(MockLFMBase())
     dl = DataLoader(DictDS(), batch_size=2)

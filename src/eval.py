@@ -18,11 +18,12 @@ def perplexity(
     total_tokens = 0
 
     for batch in dataloader:
-        device = next(model.base.parameters()).device
-        input_ids = batch["input_ids"].to(device)
-        labels = batch["labels"].to(device)
+        device         = next(model.base.parameters()).device
+        input_ids      = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels         = batch["labels"].to(device)
 
-        logits = model(input_ids, task_id=task_id)  # (B, L, V)
+        logits = model(input_ids, task_id=task_id, attention_mask=attention_mask)
         loss = F.cross_entropy(
             logits[:, :-1].contiguous().view(-1, logits.size(-1)),
             labels[:, 1:].contiguous().view(-1),

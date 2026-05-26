@@ -58,12 +58,17 @@ class AlpacaDataset(Dataset):
                                    truncation=True, max_length=max_length,
                                    return_tensors="pt")
 
-            ids      = full_enc["input_ids"].squeeze(0)
-            n_prompt = min(prompt_enc["input_ids"].shape[1], max_length)
-            labels   = ids.clone()
+            ids           = full_enc["input_ids"].squeeze(0)
+            attention_mask = full_enc["attention_mask"].squeeze(0)
+            n_prompt      = min(prompt_enc["input_ids"].shape[1], max_length)
+            labels        = ids.clone()
             labels[:n_prompt]                        = -100
             labels[labels == tokenizer.pad_token_id] = -100
-            self.samples.append({"input_ids": ids, "labels": labels})
+            self.samples.append({
+                "input_ids":      ids,
+                "attention_mask": attention_mask,
+                "labels":         labels,
+            })
 
     def __len__(self):
         return len(self.samples)
@@ -89,7 +94,7 @@ def main():
 
     print("Loading LFM2.5-1.2B-Instruct (frozen base)...")
     base = AutoModelForCausalLM.from_pretrained(
-        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.bfloat16
+        "LiquidAI/LFM2.5-1.2B-Instruct", dtype=torch.bfloat16
     ).to(device)
     tok  = AutoTokenizer.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct")
     if tok.pad_token is None:
