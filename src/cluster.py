@@ -5,7 +5,7 @@ from ncps.wirings import AutoNCP
 
 
 class CfCCluster(nn.Module):
-    BASE_DIM    = 2560
+    BASE_DIM    = 2048
     CLUSTER_DIM = 64
     MOTOR_DIM   = 16
 

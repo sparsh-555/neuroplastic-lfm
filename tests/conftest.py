@@ -6,7 +6,7 @@ import pytest
 class MockLFMBase(nn.Module):
     """Minimal mock of LFM2 for unit testing without loading the 1.2B model."""
 
-    HIDDEN_SIZE = 2560
+    HIDDEN_SIZE = 2048
     VOCAB_SIZE  = 100
 
     def __init__(self):

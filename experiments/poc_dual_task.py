@@ -67,11 +67,11 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    print("Loading LFM2-1.2B (frozen base)...")
+    print("Loading LFM2.5-1.2B-Instruct (frozen base)...")
     base = AutoModelForCausalLM.from_pretrained(
-        "LiquidAI/LFM2-1.2B", torch_dtype=torch.float32
+        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.float32
     ).to(device)
-    tok  = AutoTokenizer.from_pretrained("LiquidAI/LFM2-1.2B")
+    tok  = AutoTokenizer.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct")
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 

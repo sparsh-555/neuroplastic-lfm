@@ -13,7 +13,7 @@ from tqdm import tqdm
 from experiments.poc_dual_task import (
     AlpacaDataset, filter_records,
     SCIENCE_KEYWORDS, CREATIVE_KEYWORDS,
-    TRAIN_SIZE, EVAL_SIZE, BATCH_SIZE, MAX_LENGTH,
+    TRAIN_SIZE, EVAL_SIZE, BATCH_SIZE,
 )
 
 MAX_STEPS = 300
@@ -64,11 +64,11 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    print("Loading LFM2-1.2B for naive fine-tuning...")
+    print("Loading LFM2.5-1.2B-Instruct for naive fine-tuning...")
     model = AutoModelForCausalLM.from_pretrained(
-        "LiquidAI/LFM2-1.2B", torch_dtype=torch.float32
+        "LiquidAI/LFM2.5-1.2B-Instruct", torch_dtype=torch.float32
     ).to(device)
-    tok = AutoTokenizer.from_pretrained("LiquidAI/LFM2-1.2B")
+    tok = AutoTokenizer.from_pretrained("LiquidAI/LFM2.5-1.2B-Instruct")
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 

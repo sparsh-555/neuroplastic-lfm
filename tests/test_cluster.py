@@ -4,9 +4,9 @@ from src.cluster import CfCCluster
 
 def test_forward_output_shape():
     cluster = CfCCluster(seed=0)
-    h = torch.randn(2, 10, 2560)
+    h = torch.randn(2, 10, 2048)
     out = cluster(h)
-    assert out.shape == (2, 10, 2560)
+    assert out.shape == (2, 10, 2048)
 
 
 def test_maturity_gate_near_zero_at_init():
@@ -17,7 +17,7 @@ def test_maturity_gate_near_zero_at_init():
 
 def test_output_near_zero_at_init():
     cluster = CfCCluster(seed=0)
-    h = torch.randn(2, 5, 2560)
+    h = torch.randn(2, 5, 2048)
     out = cluster(h)
     assert out.abs().max().item() < 1.0
 
@@ -36,12 +36,12 @@ def test_all_parameters_trainable_at_creation():
 def test_parameter_count_in_expected_range():
     cluster = CfCCluster(seed=0)
     n = sum(p.numel() for p in cluster.parameters())
-    assert 200_000 < n < 500_000, f"Expected 200K–500K params, got {n}"
+    assert 100_000 < n < 500_000, f"Expected 100K–500K params, got {n}"
 
 
 def test_gradient_flows_to_all_components():
     cluster = CfCCluster(seed=0)
-    h = torch.randn(2, 5, 2560, requires_grad=False)
+    h = torch.randn(2, 5, 2048, requires_grad=False)
     out = cluster(h)
     out.sum().backward()
     assert cluster.adapter_in.weight.grad is not None, "adapter_in gradient missing"
@@ -51,15 +51,15 @@ def test_gradient_flows_to_all_components():
 
 def test_batch_size_one():
     cluster = CfCCluster(seed=0)
-    h = torch.randn(1, 7, 2560)
+    h = torch.randn(1, 7, 2048)
     out = cluster(h)
-    assert out.shape == (1, 7, 2560)
+    assert out.shape == (1, 7, 2048)
 
 
 def test_different_seeds_produce_different_outputs():
     cluster_a = CfCCluster(seed=0)
     cluster_b = CfCCluster(seed=99)
-    h = torch.randn(1, 5, 2560)
+    h = torch.randn(1, 5, 2048)
     out_a = cluster_a(h)
     out_b = cluster_b(h)
     assert not torch.allclose(out_a, out_b)
