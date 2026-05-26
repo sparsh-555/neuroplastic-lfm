@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import pytest
 from src.model import NeuroplasticLFM
 from tests.conftest import MockLFMBase
@@ -70,3 +69,27 @@ def test_gradient_does_not_reach_base_params(model):
     loss.backward()
     for name, param in model.base.named_parameters():
         assert param.grad is None, f"Gradient leaked into base param '{name}'"
+
+
+def test_train_cluster_reduces_loss_and_gate_opens():
+    """Smoke test: train loop runs, records history, gate is near zero initially."""
+    import torch
+    from torch.utils.data import DataLoader
+    from src.train import train_cluster
+
+    class DictDS(torch.utils.data.Dataset):
+        def __init__(self):
+            self.ids = torch.randint(0, MockLFMBase.VOCAB_SIZE, (8, 8))
+        def __len__(self): return len(self.ids)
+        def __getitem__(self, i):
+            return {"input_ids": self.ids[i], "labels": self.ids[i].clone()}
+
+    base  = MockLFMBase()
+    m     = NeuroplasticLFM(base)
+    m.spawn_cluster("smoke")
+    dl    = DataLoader(DictDS(), batch_size=2)
+    history = train_cluster(m, "smoke", dl, max_steps=6, lr=1e-2, log_every=3)
+
+    assert len(history) >= 1
+    assert history[0]["loss"] > 0
+    assert history[0]["gate"] < 0.01
