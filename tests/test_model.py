@@ -95,7 +95,7 @@ def test_train_cluster_reduces_loss_and_gate_opens():
 
     assert len(history) >= 1
     assert history[0]["loss"] > 0
-    assert history[0]["gate"] < 0.01
+    assert history[0]["gate"] < 0.1  # sigmoid(-3) ≈ 0.0474
 
 
 def test_perplexity_returns_positive_finite_float():

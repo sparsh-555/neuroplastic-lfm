@@ -12,7 +12,7 @@ def test_forward_output_shape():
 def test_maturity_gate_near_zero_at_init():
     cluster = CfCCluster(seed=0)
     gate = torch.sigmoid(cluster.maturity).item()
-    assert gate < 0.01  # sigmoid(-6) ≈ 0.00248
+    assert gate < 0.1  # sigmoid(-3) ≈ 0.0474
 
 
 def test_output_near_zero_at_init():

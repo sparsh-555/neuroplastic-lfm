@@ -24,7 +24,7 @@ CREATIVE_KEYWORDS = {"story", "creative", "write", "poem", "fiction",
 
 MAX_LENGTH = 256
 BATCH_SIZE = 4
-MAX_STEPS  = 300
+MAX_STEPS  = 500
 TRAIN_SIZE = 150
 EVAL_SIZE  = 50
 
