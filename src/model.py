@@ -25,8 +25,8 @@ class NeuroplasticLFM(nn.Module):
         task_id: Optional[str] = None,
         **kwargs,
     ) -> torch.Tensor:
-        out = self.base(input_ids, output_hidden_states=True, **kwargs)
-        h   = out.hidden_states[-1]  # (B, L, hidden_size)
+        out = self.base(input_ids, **kwargs)
+        h   = out.last_hidden_state  # (B, L, hidden_size) — post embedding_norm
 
         if task_id is not None:
             h = h + self.registry.get(task_id)(h)

@@ -14,13 +14,11 @@ class MockLFMBase(nn.Module):
         self.lm_head = nn.Linear(self.HIDDEN_SIZE, self.VOCAB_SIZE, bias=False)
         self.config  = type("Config", (), {"hidden_size": self.HIDDEN_SIZE})()
 
-    def forward(self, input_ids, output_hidden_states=False, **kwargs):
+    def forward(self, input_ids, **kwargs):
         B, L = input_ids.shape
         h      = torch.randn(B, L, self.HIDDEN_SIZE, device=input_ids.device)
         logits = self.lm_head(h)
-        if output_hidden_states:
-            return type("Output", (), {"hidden_states": (h,), "logits": logits})()
-        return type("Output", (), {"logits": logits})()
+        return type("Output", (), {"last_hidden_state": h, "logits": logits})()
 
 
 @pytest.fixture
