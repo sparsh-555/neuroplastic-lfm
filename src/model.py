@@ -3,13 +3,19 @@ import torch.nn as nn
 from typing import Optional
 from src.registry import ClusterRegistry
 
+# After layer 8 (3rd attention block at index 2,5,8), 7 layers + embedding_norm remain.
+# The cluster correction propagates through 3 more attention blocks before lm_head,
+# giving the model's own attention mechanism a chance to route it into place.
+INJECT_AT = 8
+
 
 class NeuroplasticLFM(nn.Module):
-    def __init__(self, base_model: nn.Module):
+    def __init__(self, base_model: nn.Module, inject_at: int = INJECT_AT):
         super().__init__()
-        self.base     = base_model
-        self.lm_head  = base_model.lm_head
-        self.registry = ClusterRegistry()
+        self.base      = base_model
+        self.lm_head   = base_model.lm_head
+        self.registry  = ClusterRegistry()
+        self.inject_at = inject_at
         self._freeze_base()
 
     def _freeze_base(self) -> None:
@@ -28,10 +34,19 @@ class NeuroplasticLFM(nn.Module):
         task_id: Optional[str] = None,
         **kwargs,
     ) -> torch.Tensor:
-        out = self.base.model(input_ids, **kwargs)
-        h   = out.last_hidden_state  # (B, L, hidden_size) — post embedding_norm
-
+        handle = None
         if task_id is not None:
-            h = h + self.registry.get(task_id)(h)
+            cluster = self.registry.get(task_id)
+            def hook(module, input, output):
+                # Cluster computes in float32; cast back to backbone dtype before adding.
+                delta = cluster(output.to(torch.float32)).to(output.dtype)
+                return output + delta
+            handle = self.base.model.layers[self.inject_at].register_forward_hook(hook)
 
-        return self.lm_head(h)  # (B, L, vocab_size)
+        try:
+            out = self.base.model(input_ids, **kwargs)
+        finally:
+            if handle is not None:
+                handle.remove()
+
+        return self.lm_head(out.last_hidden_state)
