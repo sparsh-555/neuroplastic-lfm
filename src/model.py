@@ -38,9 +38,8 @@ class NeuroplasticLFM(nn.Module):
         if task_id is not None:
             cluster = self.registry.get(task_id)
             def hook(module, input, output):
-                # Cluster computes in float32; cast back to backbone dtype before adding.
-                delta = cluster(output.to(torch.float32)).to(output.dtype)
-                return output + delta
+                # cluster.forward() handles float32↔backbone-dtype casting internally
+                return output + cluster(output)
             handle = self.base.model.layers[self.inject_at].register_forward_hook(hook)
 
         try:

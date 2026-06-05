@@ -3,6 +3,8 @@ Baseline: naive sequential fine-tuning to demonstrate catastrophic forgetting.
 Run this alongside poc_dual_task.py to show NeuroplasticLFM's zero-forgetting guarantee.
 """
 import math
+from itertools import cycle
+
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -11,20 +13,23 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
 from experiments.poc_dual_task import (
-    AlpacaDataset, filter_records,
-    SCIENCE_KEYWORDS, CREATIVE_KEYWORDS,
-    TRAIN_SIZE, EVAL_SIZE, BATCH_SIZE,
+    AlpacaDataset,
+    BATCH_SIZE,
+    CREATIVE_KEYWORDS,
+    EVAL_SIZE,
+    filter_records,
+    SCIENCE_KEYWORDS,
+    TRAIN_SIZE,
 )
 
 MAX_STEPS = 300
 
 
 def finetune(model, dataloader, max_steps: int = MAX_STEPS, lr: float = 3e-4) -> None:
-    device    = next(model.parameters()).device
+    device = next(model.parameters()).device
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     model.train()
-    step = 0
-    for batch in tqdm(dataloader, desc="fine-tuning"):
+    for step, batch in enumerate(tqdm(cycle(dataloader), total=max_steps, desc="fine-tuning")):
         if step >= max_steps:
             break
         input_ids      = batch["input_ids"].to(device)

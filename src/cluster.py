@@ -13,6 +13,14 @@ class CfCCluster(nn.Module):
         super().__init__()
         wiring           = AutoNCP(units=64, output_size=16, sparsity_level=0.5, seed=seed)
         self.adapter_in  = nn.Linear(self.BASE_DIM, self.CLUSTER_DIM)
+        # pos_proj maps normalised position [0,1] → CLUSTER_DIM and adds it to the
+        # CfC input before each forward pass.  Because time_a and time_b inside each
+        # CfCCell receive x = content_features + pos_embedding, the effective time
+        # constant τ = sigmoid(time_a(x)*1 + time_b(x)) becomes jointly conditioned
+        # on token content AND sequence position — the functional neuroplasticity signal.
+        # ncps' timespans API cannot be used here: it calls .squeeze() on the per-step
+        # slice which collapses (B,1)→(B,) and then fails to broadcast with (B,n_neurons).
+        self.pos_proj    = nn.Linear(1, self.CLUSTER_DIM, bias=False)
         self.cfc         = CfC(self.CLUSTER_DIM, wiring, batch_first=True, return_sequences=True)
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.BASE_DIM)
         # Zero-init gating from LLaMA-Adapter (Zhang et al., 2023).
@@ -21,10 +29,12 @@ class CfCCluster(nn.Module):
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
         # hidden: (B, L, BASE_DIM) — may be bfloat16 from base model
-        h      = hidden.float()
-        x      = self.adapter_in(h)                                    # (B, L, CLUSTER_DIM)
-        h0     = torch.zeros(x.size(0), self.CLUSTER_DIM,
-                             device=x.device, dtype=x.dtype)
-        out, _ = self.cfc(x, h0)                                       # (B, L, MOTOR_DIM)
-        delta  = self.adapter_out(out)                                 # (B, L, BASE_DIM)
+        h = hidden.float()
+        x = self.adapter_in(h)                                       # (B, L, CLUSTER_DIM)
+        B, L, _ = x.shape
+        pos = torch.linspace(0.0, 1.0, L, device=x.device, dtype=x.dtype).view(1, L, 1)
+        x = x + self.pos_proj(pos)                                   # (B, L, CLUSTER_DIM)
+        h0 = torch.zeros(B, self.CLUSTER_DIM, device=x.device, dtype=x.dtype)
+        out, _ = self.cfc(x, h0)                                     # (B, L, MOTOR_DIM)
+        delta = self.adapter_out(out)                                 # (B, L, BASE_DIM)
         return (torch.sigmoid(self.maturity) * delta).to(hidden.dtype)
