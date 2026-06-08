@@ -18,10 +18,11 @@ def test_spawn_stores_base_init_on_first_spawn():
 
 
 def test_base_init_matches_fresh_cluster():
-    registry = ClusterRegistry()
+    seed = 42
+    registry = ClusterRegistry(seed=seed)
     registry.spawn("task_a")
-    torch.manual_seed(ClusterRegistry.CLUSTER_SEED)
-    fresh = CfCCluster(seed=ClusterRegistry.CLUSTER_SEED)
+    torch.manual_seed(seed)
+    fresh = CfCCluster(seed=seed)
     for k, v in registry.base_init.items():
         expected = fresh.state_dict()[k].float()
         actual   = v.float()

@@ -88,7 +88,7 @@ def filter_records(dataset, keywords, n):
     return results
 
 
-def main():
+def main(seed: int = 0):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
@@ -100,7 +100,7 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    model = NeuroplasticLFM(base).to(device)
+    model = NeuroplasticLFM(base, seed=seed).to(device)
 
     print("Preparing datasets from yahma/alpaca-cleaned...")
     alpaca = load_dataset("yahma/alpaca-cleaned", split="train")

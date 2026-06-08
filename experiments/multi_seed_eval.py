@@ -29,12 +29,13 @@ def run_one_seed(seed: int) -> dict:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    # Import here so each call gets a fresh module-level state
     from experiments.poc_dual_task import main as poc_main
     print(f"\n{'='*62}")
     print(f"SEED {seed}")
     print(f"{'='*62}")
-    return poc_main()
+    # seed flows to NeuroplasticLFM → ClusterRegistry → CfCCluster → AutoNCP,
+    # giving each run a different wiring and linear weight initialisation.
+    return poc_main(seed=seed)
 
 
 def main() -> None:

@@ -5,13 +5,14 @@ from src.cluster import CfCCluster
 
 
 class ClusterRegistry(nn.Module):
-    # All clusters start from the same init so TIES task vectors are comparable.
-    CLUSTER_SEED = 0
-
-    def __init__(self):
+    def __init__(self, seed: int = 0):
         super().__init__()
         self.clusters: nn.ModuleDict = nn.ModuleDict()
         self.base_init: Optional[Dict[str, torch.Tensor]] = None
+        # All clusters within a run share one seed so TIES task vectors are comparable
+        # (task vector = trained_params - base_init requires identical starting point).
+        # Different runs use different seeds to measure initialization variance.
+        self._cluster_seed = seed
 
     def spawn(self, task_id: str) -> CfCCluster:
         # Freeze all existing clusters
@@ -19,9 +20,9 @@ class ClusterRegistry(nn.Module):
             for param in cluster.parameters():
                 param.requires_grad = False
 
-        # Reset RNG to ensure deterministic initialization
-        torch.manual_seed(self.CLUSTER_SEED)
-        cluster = CfCCluster(seed=self.CLUSTER_SEED)
+        # Reset RNG to the shared per-run seed so all clusters start identically
+        torch.manual_seed(self._cluster_seed)
+        cluster = CfCCluster(seed=self._cluster_seed)
 
         # Store base_init on first spawn (before any training)
         if self.base_init is None:

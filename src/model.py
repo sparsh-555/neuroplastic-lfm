@@ -10,11 +10,11 @@ INJECT_AT = 8
 
 
 class NeuroplasticLFM(nn.Module):
-    def __init__(self, base_model: nn.Module, inject_at: int = INJECT_AT):
+    def __init__(self, base_model: nn.Module, inject_at: int = INJECT_AT, seed: int = 0):
         super().__init__()
         self.base      = base_model
         self.lm_head   = base_model.lm_head
-        self.registry  = ClusterRegistry()
+        self.registry  = ClusterRegistry(seed=seed)
         self.inject_at = inject_at
         self._freeze_base()
 
