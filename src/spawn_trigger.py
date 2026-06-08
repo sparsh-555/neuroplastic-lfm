@@ -4,6 +4,11 @@ Autonomous spawn trigger for NeuroplasticLFM.
 Monitors per-batch loss against a calibrated baseline. When the rolling average
 exceeds baseline * threshold (distribution shift detected), spawns a new cluster
 and trains it on the buffered high-loss examples — no task labels required.
+
+After each spawn the baseline is re-calibrated with the new cluster active.
+This means the threshold adapts to the model's improved capability: subsequent
+spawns only fire if the distribution is genuinely novel relative to everything
+the model can currently handle, not relative to the original frozen baseline.
 """
 from collections import deque
 from typing import Optional
@@ -68,7 +73,6 @@ class ExampleBuffer:
         ids = torch.cat(self._ids, dim=0)
         masks = torch.cat(self._masks, dim=0)
         labels = torch.cat(self._labels, dim=0)
-        ds = TensorDataset(ids, masks, labels)
 
         class _DictDS(torch.utils.data.Dataset):
             def __init__(self, ids, masks, labels):
@@ -86,7 +90,6 @@ class ExampleBuffer:
                     "labels": self.labels[i],
                 }
 
-        _ = ds  # suppress unused warning
         return DataLoader(
             _DictDS(ids, masks, labels), batch_size=batch_size, shuffle=True
         )
@@ -111,7 +114,7 @@ class AdaptiveSpawnController:
         buffer_size: int = 200,
         train_steps: int = 500,
         min_buffer_to_spawn: int = 50,
-        cooldown_steps: int = 60,
+        cooldown_steps: int = 20,
     ):
         self.model = model
         self.monitor = LossMonitor(window=window, threshold=threshold)
@@ -135,6 +138,27 @@ class AdaptiveSpawnController:
             labels[:, 1:].contiguous().view(-1),
             ignore_index=-100,
         ).item()
+
+    @torch.no_grad()
+    def _recalibrate(self, n_batches: int = 20) -> float:
+        """
+        Re-measure baseline with the current active cluster on buffered examples.
+
+        Called after each spawn so the threshold adapts to the improved model
+        capability rather than staying fixed at the original frozen-baseline level.
+        A second spawn only fires if the data is genuinely novel relative to what
+        all existing clusters together can already handle.
+        """
+        dl = self.buffer.as_dataloader()
+        losses = []
+        for i, batch in enumerate(dl):
+            if i >= n_batches:
+                break
+            losses.append(self._batch_loss(batch, task_id=self._active_cluster))
+        new_baseline = sum(losses) / len(losses) if losses else self.monitor.baseline
+        self.monitor.set_baseline(new_baseline)
+        print(f"[SpawnTrigger] Baseline recalibrated → {new_baseline:.4f} (with cluster '{self._active_cluster}' active)")
+        return new_baseline
 
     def calibrate(self, dataloader: DataLoader, n_batches: int = 20) -> float:
         """Compute baseline loss on a representative sample. Call before streaming."""
@@ -182,9 +206,14 @@ class AdaptiveSpawnController:
             )
             self._spawn_count += 1
             self._active_cluster = cluster_id
+
+            # Re-calibrate baseline with the new cluster active so the threshold
+            # reflects current capability, not the original frozen baseline.
+            self._recalibrate(n_batches=20)
+
             self.monitor._buffer.clear()
-            self.buffer = ExampleBuffer(capacity=self.buffer.capacity)  # fresh buffer
-            self._cooldown_remaining = self.cooldown_steps
-            print(f"[SpawnTrigger] Cluster '{cluster_id}' trained and active. Cooldown: {self.cooldown_steps} steps.")
+            self.buffer = ExampleBuffer(capacity=self.buffer.capacity)
+            self._cooldown_remaining = self.cooldown_steps  # short: just for buffer refill
+            print(f"[SpawnTrigger] Cluster '{cluster_id}' active. Cooldown: {self.cooldown_steps} steps.")
 
         return self._active_cluster
