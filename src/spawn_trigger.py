@@ -111,14 +111,17 @@ class AdaptiveSpawnController:
         buffer_size: int = 200,
         train_steps: int = 500,
         min_buffer_to_spawn: int = 50,
+        cooldown_steps: int = 60,
     ):
         self.model = model
         self.monitor = LossMonitor(window=window, threshold=threshold)
         self.buffer = ExampleBuffer(capacity=buffer_size)
         self.train_steps = train_steps
         self.min_buffer_to_spawn = min_buffer_to_spawn
+        self.cooldown_steps = cooldown_steps
         self._spawn_count = 0
         self._active_cluster: Optional[str] = None
+        self._cooldown_remaining: int = 0
 
     @torch.no_grad()
     def _batch_loss(self, batch: dict, task_id: Optional[str] = None) -> float:
@@ -156,7 +159,15 @@ class AdaptiveSpawnController:
         self.monitor.update(loss)
         self.buffer.add(batch)
 
-        if self.monitor.should_spawn() and len(self.buffer) >= self.min_buffer_to_spawn:
+        if self._cooldown_remaining > 0:
+            self._cooldown_remaining -= 1
+
+        can_spawn = (
+            self._cooldown_remaining == 0
+            and self.monitor.should_spawn()
+            and len(self.buffer) >= self.min_buffer_to_spawn
+        )
+        if can_spawn:
             cluster_id = f"auto_{self._spawn_count}"
             print(
                 f"\n[SpawnTrigger] Rolling loss {self.monitor.rolling_loss():.4f} > "
@@ -171,7 +182,9 @@ class AdaptiveSpawnController:
             )
             self._spawn_count += 1
             self._active_cluster = cluster_id
-            self.monitor._buffer.clear()  # reset rolling window after spawn
-            print(f"[SpawnTrigger] Cluster '{cluster_id}' trained and active.")
+            self.monitor._buffer.clear()
+            self.buffer = ExampleBuffer(capacity=self.buffer.capacity)  # fresh buffer
+            self._cooldown_remaining = self.cooldown_steps
+            print(f"[SpawnTrigger] Cluster '{cluster_id}' trained and active. Cooldown: {self.cooldown_steps} steps.")
 
         return self._active_cluster
