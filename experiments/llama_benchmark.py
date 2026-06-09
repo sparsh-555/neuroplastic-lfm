@@ -168,14 +168,25 @@ def run_pertask_lora(
     return acc_matrix
 
 
-# ── Experiment 3: NeuroplasticLM on LLaMA-3-8B ────────────────────────────────
+# ── Experiments 3 & 4: NeuroplasticLM CfC and MLP variants ───────────────────
 
 def run_neuroplastic(
-    base, train_dls, eval_dls, label_tids, device
+    base, train_dls, eval_dls, label_tids, device,
+    cluster_cls=None, label: str = "NeuroplasticLM",
 ) -> List[Dict[str, float]]:
-    model = NeuroplasticLFM(
-        base, inject_at=INJECT_AT, seed=0, base_dim=BASE_DIM
-    ).to(device)
+    """
+    Runs NeuroplasticLM with the given cluster class.
+    Defaults to CfCCluster (None → model default).
+    Pass cluster_cls=MLPCluster for the ablation.
+
+    Watch τ_a_std in the training log for CfC:
+      - Flat (≈0.1675 throughout): τ not specialising at this scale (same as LFM)
+      - Growing (0.1675 → 0.25+): liquid dynamics activating — CfC advantage proven
+    """
+    kwargs = dict(inject_at=INJECT_AT, seed=0, base_dim=BASE_DIM)
+    if cluster_cls is not None:
+        kwargs["cluster_cls"] = cluster_cls
+    model = NeuroplasticLFM(base, **kwargs).to(device)
     acc_matrix: List[Dict[str, float]] = []
 
     for i, task in enumerate(TASK_ORDER):
@@ -254,17 +265,37 @@ def main():
         MODEL_NAME, torch_dtype=torch.bfloat16
     ).to(device)
 
-    # ── NeuroplasticLM on LLaMA-3-8B ─────────────────────────────────────────
+    # ── NeuroplasticLM CfC on LLaMA-3-8B ────────────────────────────────────
     print(f"\n{'═'*60}")
-    print("EXPERIMENT 3: NeuroplasticLM (one frozen CfC cluster per task)")
+    print("EXPERIMENT 3: NeuroplasticLM — CfC cluster (recurrent ODE adapter)")
     print(f"{'═'*60}")
-    nplm_matrix = run_neuroplastic(base, train_dls, eval_dls, label_tids, device)
+    nplm_cfc_matrix = run_neuroplastic(
+        base, train_dls, eval_dls, label_tids, device,
+        cluster_cls=None, label="NeuroplasticLM-CfC",
+    )
+
+    print("\nReloading base model for MLP ablation …")
+    del base
+    torch.cuda.empty_cache()
+    base = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME, torch_dtype=torch.bfloat16
+    ).to(device)
+
+    # ── NeuroplasticLM MLP ablation on LLaMA-3-8B ────────────────────────────
+    print(f"\n{'═'*60}")
+    print("EXPERIMENT 4: NeuroplasticLM — MLP cluster (ablation, no τ dynamics)")
+    print(f"{'═'*60}")
+    nplm_mlp_matrix = run_neuroplastic(
+        base, train_dls, eval_dls, label_tids, device,
+        cluster_cls=MLPCluster, label="NeuroplasticLM-MLP",
+    )
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     acc_matrices = {
-        "Sequential LoRA":  seq_lora_matrix,
-        "Per-task LoRA":    pertask_lora_matrix,
-        "NeuroplasticLM":   nplm_matrix,
+        "Sequential LoRA":      seq_lora_matrix,
+        "Per-task LoRA":        pertask_lora_matrix,
+        "NeuroplasticLM (CfC)": nplm_cfc_matrix,
+        "NeuroplasticLM (MLP)": nplm_mlp_matrix,
     }
     cl_results: Dict[str, CLMetrics] = {
         name: compute_cl_metrics(mat, TASK_ORDER, baseline_accs)
@@ -276,12 +307,25 @@ def main():
     for task in TASK_ORDER:
         print(f"  {task:10s}: {baseline_accs[task]:.3f}")
 
+    delta_ap = (
+        cl_results["NeuroplasticLM (CfC)"].ap
+        - cl_results["NeuroplasticLM (MLP)"].ap
+    )
+    print(f"\nCfC vs MLP  ΔAP = {delta_ap:+.3f}")
+    if delta_ap > 0.02:
+        print("  → CfC outperforms MLP on LLaMA-3-8B: liquid dynamics contribute at this scale")
+    elif delta_ap < -0.02:
+        print("  → MLP outperforms CfC: consider grow-and-freeze framing without CfC-specific claim")
+    else:
+        print("  → CfC ≈ MLP within noise at this training scale")
+
     return {
-        "baseline_accs":       baseline_accs,
-        "seq_lora_matrix":     seq_lora_matrix,
-        "pertask_lora_matrix": pertask_lora_matrix,
-        "nplm_matrix":         nplm_matrix,
-        "cl_results":          cl_results,
+        "baseline_accs":        baseline_accs,
+        "seq_lora_matrix":      seq_lora_matrix,
+        "pertask_lora_matrix":  pertask_lora_matrix,
+        "nplm_cfc_matrix":      nplm_cfc_matrix,
+        "nplm_mlp_matrix":      nplm_mlp_matrix,
+        "cl_results":           cl_results,
     }
 
 
