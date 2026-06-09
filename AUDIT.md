@@ -152,30 +152,22 @@ adapters for any LLM or transformer. The novelty is architecture-independent, so
 
 ---
 
-### H6 — No CfC vs MLP ablation
+### H6 — CfC vs MLP ablation ✅ RESOLVED (Run 010)
 
-**The gap:** We've never tested whether CfC liquid dynamics are doing anything beyond what a plain MLP of the same size would do.
+**Result (June 2026):** MLP ≥ CfC at this training scale (AP 0.818 vs 0.798, ΔAP = -0.020).
 
-A 187K MLP with:
-- `Linear(2048 → 64)` (adapter_in)
-- `ReLU()`
-- `Linear(64 → 2048)` (adapter_out)
-- Same maturity gate
-- Same injection point
+**Decision: pivot to "NCP-wired growing adapter" framing.**
 
-...would be much simpler, faster, and easier to explain. If it performs the same:
-- The CfC contribution vanishes
-- The paper needs reframing as "PNN-style growing architecture for LLMs" with CfC as a design option, not the core contribution
+The core contribution is the growing-architecture CL method (zero forgetting, label-free,
+few params, model-agnostic). CfC is the default substrate with a note that simpler adapters
+(MLP) also work and train 4× faster. The NCP sparse wiring is an interesting design property
+but not the primary differentiator.
 
-If CfC clearly outperforms MLP:
-- This is the key differentiating result and should lead the ablation section
-- The τ dynamics and liquid time constants are doing meaningful work
+**CL properties unaffected:** Both CfC and MLP have BWT=0, F.Ra=0.
 
-**Note (Path B deprecated):** The cross-model differential (`CfC - MLP` on LFM vs. on LLaMA)
-no longer needs to resolve a framing decision — Path A is confirmed. The ablation is still
-required, but the question is simpler: does CfC outperform MLP on any model? If yes, CfC is
-the right substrate and the τ dynamics are doing real work. If no, the paper pivots to
-"NCP-wired growing adapter" with CfC as one architectural option.
+**Remaining question:** Does the gap persist on LLaMA-3-8B or reverse at larger scale? The
+LLaMA run (step 6) should include both CfC and MLP variants to answer this — if CfC wins on
+LLaMA, the substrate may be scale-sensitive rather than genuinely inferior.
 
 ---
 
@@ -262,9 +254,9 @@ Fix in this order — each step unblocks the next:
 3. [~1 week]  Re-run cl_benchmark.py on LFM with fixed gate; confirm AP improves
               → Baseline results: AP 0.808, BWT 0.000, F.Ra 0.000 (gate broken)
 
-4. [~3 days]  CfC vs MLP ablation on LFM (question: does CfC beat MLP at all?)
-              → If yes: τ dynamics are doing real work, CfC substrate is justified
-              → If no: pivot to "NCP-wired growing adapter" framing
+4. [DONE]     CfC vs MLP ablation on LFM — MLP wins by 2 AP (0.818 vs 0.798)
+              → Framing pivoted to "NCP-wired growing adapter"; CfC is one option
+              → Both have zero forgetting; CfC 4× slower per training step
 
 5. [~3 days]  Add O-LoRA as honest peer comparison (zero-forgetting guarantee)
 

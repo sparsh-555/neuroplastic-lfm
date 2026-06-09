@@ -152,10 +152,12 @@ def main():
     delta   = cfc_ap - mlp_ap
     verdict = "CfC > MLP" if delta > 0.01 else ("MLP > CfC" if delta < -0.01 else "CfC ≈ MLP")
     print(f"\nAblation verdict: {verdict}  (ΔAP = {delta:+.3f})")
-    if abs(delta) <= 0.01:
-        print("  → τ dynamics do not provide clear benefit; consider NCP-wired adapter framing")
+    if delta > 0.01:
+        print("  → CfC τ dynamics contribute meaningfully; recurrent substrate is justified")
+    elif delta < -0.01:
+        print("  → MLP matches or beats CfC; consider NCP-wired growing adapter framing")
     else:
-        print("  → CfC substrate is justified; τ dynamics contribute meaningfully")
+        print("  → CfC ≈ MLP within noise; τ dynamics provide no clear benefit at this scale")
 
     return {
         "baseline_accs": baseline_accs,

@@ -17,6 +17,7 @@
 - [x] Run 009: gate-fixed benchmark run — AP: seq 0.814 / pt 0.842 / nplm 0.798; BWT: nplm 0.000
 - [x] Framing resolved — Path A (NeuroplasticLM general); Path B deprecated; no prior CfC-as-adapter work found
 - [x] HAM (arXiv 2509.13211) confirmed as closest prior art — LoRA substrate, vision only
+- [x] Run 010: CfC vs MLP ablation — MLP wins AP 0.818 vs 0.798; framing → NCP-wired growing adapter
 
 ---
 
