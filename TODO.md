@@ -30,6 +30,28 @@ Realistic targets:
 
 ---
 
+## Framing Decision — RESOLVED: Path A (NeuroplasticLM, general)
+
+**Web search June 2026 confirmed: no prior work uses CfC/LTC/NCP as adapters for any LLM
+or transformer.** The novelty is architecture-independent. Path B (LFM-specific narrative)
+is deprecated — the "liquid + liquid" synergy has no empirical grounding yet and is
+unnecessary when the general claim is already novel.
+
+**Resolved direction:**
+- Rename: `NeuroplasticLFM` → **`NeuroplasticLM`**
+- Primary claim: first recurrent, ODE-derived adapter (CfC/NCP) for CL in LLMs —
+  architectural zero-forgetting + adaptive τ dynamics per token, impossible in LoRA
+- Test on LFM (done) + LLaMA-3-8B (pending) — generalization, not motivation
+- HAM (arXiv 2509.13211) is closest prior art: LoRA substrate, vision only, no NLP
+
+**LoRA comparison note (still relevant):**
+LFM2.5-1.2B has 16 layers — 6 attention + 10 conv. LoRA targets only `q_proj/k_proj/v_proj`
+in the 6 attention layers; NeuroplasticLM also injects at an attention layer — both methods
+equally ignore the conv layers, so the comparison is internally consistent. Still needs a
+sentence in the experimental section clarifying this for LFM-unfamiliar reviewers.
+
+---
+
 ## P0: BLOCKERS — Fix these before anything else
 
 ### 1. Evaluation pipeline rewrite (metric + benchmark)
@@ -63,11 +85,12 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 ## P1: Core Architecture Validity
 
-- [ ] **CfC vs MLP ablation** — most important ablation
-  - Build a 187K MLP adapter (same `adapter_in → hidden → adapter_out`, same injection at layer 8)
-  - Train on same tasks, same steps, compare AP / F.Ra / BWT
-  - If MLP ≈ CfC on all metrics: the CfC contribution needs reframing
-  - If CfC > MLP: this is the differentiating result
+- [ ] **CfC vs MLP ablation on both models** — resolves both the core novelty claim AND the Path A/B framing decision
+  - Build a 187K MLP adapter (same `adapter_in(d_model→64) → ReLU → adapter_out(16→d_model)`, same injection point, same maturity gate)
+  - Run on LFM (d_model=2048) AND LLaMA-3-8B (d_model=4096, inject_at=16)
+  - Compare AP / F.Ra / BWT on both
+  - **If `(CfC - MLP)` gap is larger on LFM than LLaMA:** Path B holds — CfC is genuinely synergistic with LFM's liquid architecture
+  - **If gap is similar on both:** Take Path A — method is general, CfC is one valid adapter architecture among others
 
 - [ ] **Maturity gate direction** — architectural coherence issue
   - Gate starts at sigmoid(-3) ≈ 0.047 and decreases to ~0.031 during training
@@ -97,8 +120,11 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 ## P3: Generalization and Significance
 
-- [ ] **Second base model** — test on LLaMA-3-8B or Mistral-7B
-  - LFM2.5-1.2B is unknown outside LiquidAI; results need to transfer to a well-known model
+- [ ] **LLaMA-3-8B run** — primary generalization evidence (framing resolved to Path A)
+  - No longer about deciding Path A vs B — that's settled. This is now a required result.
+  - Core code change: `d_model = 4096`, `inject_at = 16` (proportional mid-model), adapter dims updated
+  - Everything else — registry, spawning, TIES-merging, eval — unchanged
+  - LFM2.5-1.2B is unknown outside LiquidAI; LLaMA-3-8B result is what reviewers will trust
 - [ ] **5 seeds + statistical significance** — t-test or Wilcoxon across seeds
   - Current 3-seed run gives ±0.01 variance; good, but formal test needed
 - [ ] **Inference latency analysis** — measure per-token latency with N=1, 3, 5 clusters active

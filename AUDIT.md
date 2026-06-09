@@ -7,7 +7,7 @@
 
 ## Summary Verdict
 
-The architecture is real and the zero-forgetting property is demonstrated. The prototype works. But the paper is not submission-ready for three structural reasons: (1) we evaluate with perplexity, the field uses accuracy; (2) we test on keyword-filtered Alpaca, the field uses standardized NLP benchmarks; (3) the "label-free" headline claim is not validated end-to-end. Everything else is fixable without changing the architecture.
+The architecture is real and the zero-forgetting property is demonstrated. The prototype works. But the paper is not submission-ready for four structural reasons: (1) we evaluate with perplexity, the field uses accuracy; (2) we test on keyword-filtered Alpaca, the field uses standardized NLP benchmarks; (3) the "label-free" headline claim is not validated end-to-end; (4) the paper is named "NeuroplasticLFM" but the architecture is fully model-agnostic and the LoRA comparison is architecturally incomplete on a hybrid model. The framing decision — general method vs. LFM-specific — must be resolved before writing anything, because it changes which experiments are the primary results.
 
 ---
 
@@ -118,7 +118,41 @@ Until adaptive spawning correctly identifies 3+ distinct tasks from a label-free
 
 ---
 
-### H4 — No CfC vs MLP ablation
+### H4 — LoRA comparison is architecturally incomplete on LFM
+
+**The structural problem:** LFM2.5-1.2B has 16 layers — 6 attention (indices 2,5,8,10,12,14) and 10 convolutional/SSM layers in between. Our LoRA baseline targets only `q_proj`, `k_proj`, `v_proj` in the 6 attention layers. The 10 conv layers are untouched by LoRA entirely.
+
+On a pure transformer (Mistral-7B, LLaMA-3-8B), LoRA can adapt all 32 attention layers — the tool is being used as designed. On LFM, LoRA is adapting roughly 6/16 of the model's parameters, with the conv layers permanently frozen. This means our LoRA baseline on LFM is weaker than its true capability on the architectures it was designed for.
+
+**The consistency note:** NeuroplasticLFM also only injects at an attention layer output (layer 8), so both methods equally ignore LFM's conv architecture. The head-to-head comparison between them is internally consistent — same handicap on both sides.
+
+**Why it still matters:**
+1. "LoRA on LFM" is not the same as "LoRA" — calling it simply "LoRA" in the paper without qualification will mislead readers
+2. The conclusion "NeuroplasticLFM outperforms LoRA on LFM" is partly an artifact of the base model choice, not pure architectural superiority
+3. A reviewer familiar with LoRA will catch this immediately
+
+**Fix:** Add a sentence in the experimental section clarifying that LoRA targets only attention projections on LFM's hybrid architecture. Test on a second model (pure transformer) where LoRA is at full capability — if NeuroplasticLFM still wins, the result is robust.
+
+---
+
+### H5 — Architecture is model-agnostic but paper was named for LFM specificity ✅ RESOLVED
+
+**Resolution (June 2026):** Web search confirmed no prior work has used CfC/LTC/NCP as
+adapters for any LLM or transformer. The novelty is architecture-independent, so Path B
+(LFM-specific narrative) has no competitive advantage over Path A and is now deprecated.
+
+**Decision taken: Path A — rename to NeuroplasticLM.**
+- Primary claim: first recurrent, ODE-derived adapter for CL in LLMs
+- The τ dynamics and sparse NCP wiring are the differentiator from MLP adapters, not LFM-specificity
+- HAM (arXiv 2509.13211, Sep 2025) is closest prior art: LoRA substrate, vision only, no NLP tasks
+- LLaMA-3-8B is now a required secondary experiment (generalization evidence, not framing test)
+
+**Remaining action:** rename the codebase/paper from NeuroplasticLFM → NeuroplasticLM
+(low priority until results are stable — keep code names as-is for now).
+
+---
+
+### H6 — No CfC vs MLP ablation
 
 **The gap:** We've never tested whether CfC liquid dynamics are doing anything beyond what a plain MLP of the same size would do.
 
@@ -137,7 +171,11 @@ If CfC clearly outperforms MLP:
 - This is the key differentiating result and should lead the ablation section
 - The τ dynamics and liquid time constants are doing meaningful work
 
-This ablation should be run before investing more in the CfC architecture.
+**Note (Path B deprecated):** The cross-model differential (`CfC - MLP` on LFM vs. on LLaMA)
+no longer needs to resolve a framing decision — Path A is confirmed. The ablation is still
+required, but the question is simpler: does CfC outperform MLP on any model? If yes, CfC is
+the right substrate and the τ dynamics are doing real work. If no, the paper pivots to
+"NCP-wired growing adapter" with CfC as one architectural option.
 
 ---
 
@@ -151,9 +189,11 @@ Our "Sequential LoRA" is the weakest possible LoRA setup: one shared adapter, tr
 
 ---
 
-### M2 — Only one base model
+### M2 — Only one base model (now elevated by framing decision)
 
-Results are only on LFM2.5-1.2B, which is obscure outside LiquidAI. All competitive papers test on at least LLaMA-7B or Mistral-7B. Testing on LLaMA-3-8B would take one RunPod run and significantly expand the claim's credibility.
+Results are only on LFM2.5-1.2B, which is obscure outside LiquidAI. All competitive papers test on at least LLaMA-7B or Mistral-7B.
+
+This was previously a "nice to have" but is now tightly coupled to the Path A vs Path B framing decision (H5). The LLaMA-3-8B experiment is not just for credibility — it's the empirical test that decides the paper's entire framing. The code change needed is minimal: `d_model = 4096`, `inject_at = 16` (proportional mid-model), adapter dims updated. Everything else — registry, spawning, TIES-merging — is unchanged.
 
 ---
 
@@ -210,16 +250,37 @@ Merged cluster PPL (2.42) is slightly worse than individual cluster PPL (2.41 sc
 Fix in this order — each step unblocks the next:
 
 ```
-1. [~1 week]  Rewrite eval pipeline: Long Sequence Benchmark + accuracy + AP/BWT/F.Ra
-2. [~1 week]  Re-run all experiments with new eval (sequential_tasks, multi-seed, baselines)
-3. [~3 days]  CfC vs MLP ablation — validates or changes the core claim
-4. [~3 days]  Add O-LoRA as honest peer comparison
-5. [~1 week]  Fix label-free spawning for 5+ tasks (adaptive_spawning end-to-end)
-6. [~3 days]  Add CaLoRA to related work; compare if feasible
-7. [~2 days]  Statistical significance (5 seeds + t-test)
-8. [~1 week]  Second base model (LLaMA-3-8B or Mistral-7B)
-9. [~2 days]  Measure inference latency
-10. [ongoing] Write paper (method, experiments, related work, conclusion)
+0. [DONE]     Framing: Path A confirmed — NeuroplasticLM, general method
+              Web search June 2026 found no prior CfC-as-adapter work anywhere.
+
+1. [DONE]     Rewrite eval pipeline: Long Sequence Benchmark + accuracy + AP/BWT/F.Ra/FWT
+              → src/benchmark.py, src/cl_metrics.py, experiments/cl_benchmark.py
+
+2. [DONE]     Fix maturity gate — zero-init adapter_out + gate init 0 + remove clamp
+              → Gate was stuck at 0.047 due to random adapter_out noise + vanishing gradient
+
+3. [~1 week]  Re-run cl_benchmark.py on LFM with fixed gate; confirm AP improves
+              → Baseline results: AP 0.808, BWT 0.000, F.Ra 0.000 (gate broken)
+
+4. [~3 days]  CfC vs MLP ablation on LFM (question: does CfC beat MLP at all?)
+              → If yes: τ dynamics are doing real work, CfC substrate is justified
+              → If no: pivot to "NCP-wired growing adapter" framing
+
+5. [~3 days]  Add O-LoRA as honest peer comparison (zero-forgetting guarantee)
+
+6. [~2 days]  Run same core experiment on LLaMA-3-8B (d_model=4096, inject_at=16)
+              → Required generalization evidence for Path A claim
+
+7. [~1 week]  Fix label-free spawning for 5+ tasks (adaptive_spawning end-to-end)
+
+8. [~3 days]  Add CaLoRA to related work; compare if feasible
+
+9. [~2 days]  Statistical significance (5 seeds + t-test)
+
+10. [~2 days]  Measure inference latency
+
+11. [ongoing] Write paper (method, experiments, related work, conclusion)
+              → Paper name: NeuroplasticLM (rename codebase when results are stable)
 ```
 
 **Total realistic timeline to ICLR 2027 submission:** 6–8 weeks of focused work.
