@@ -17,11 +17,12 @@ class NeuroplasticLFM(nn.Module):
         inject_at: int = INJECT_AT,
         seed: int = 0,
         cluster_cls: Type[nn.Module] = CfCCluster,
+        base_dim: int = 2048,
     ):
         super().__init__()
         self.base      = base_model
         self.lm_head   = base_model.lm_head
-        self.registry  = ClusterRegistry(seed=seed, cluster_cls=cluster_cls)
+        self.registry  = ClusterRegistry(seed=seed, cluster_cls=cluster_cls, base_dim=base_dim)
         self.inject_at = inject_at
         self._freeze_base()
 

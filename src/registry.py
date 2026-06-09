@@ -5,7 +5,12 @@ from src.cluster import CfCCluster
 
 
 class ClusterRegistry(nn.Module):
-    def __init__(self, seed: int = 0, cluster_cls: Type[nn.Module] = CfCCluster):
+    def __init__(
+        self,
+        seed: int = 0,
+        cluster_cls: Type[nn.Module] = CfCCluster,
+        base_dim: int = 2048,
+    ):
         super().__init__()
         self.clusters: nn.ModuleDict = nn.ModuleDict()
         self.base_init: Optional[Dict[str, torch.Tensor]] = None
@@ -14,6 +19,7 @@ class ClusterRegistry(nn.Module):
         # Different runs use different seeds to measure initialization variance.
         self._cluster_seed = seed
         self._cluster_cls = cluster_cls
+        self._base_dim = base_dim
 
     def spawn(self, task_id: str) -> nn.Module:
         # Freeze all existing clusters
@@ -23,7 +29,7 @@ class ClusterRegistry(nn.Module):
 
         # Reset RNG to the shared per-run seed so all clusters start identically
         torch.manual_seed(self._cluster_seed)
-        cluster = self._cluster_cls(seed=self._cluster_seed)
+        cluster = self._cluster_cls(seed=self._cluster_seed, base_dim=self._base_dim)
 
         # Store base_init on first spawn (before any training)
         if self.base_init is None:

@@ -108,3 +108,18 @@ def test_mlp_parameter_count_comparable_to_cfc():
     # MLP is a leaner ablation; both should be in the same order of magnitude (~100-500K)
     assert 100_000 < n_mlp < 500_000
     assert 100_000 < n_cfc < 500_000
+
+
+def test_cfc_respects_base_dim_4096():
+    # Validates that base_dim flows through to adapter_in and adapter_out.
+    cluster = CfCCluster(seed=0, base_dim=4096)
+    h = torch.randn(1, 5, 4096)
+    out = cluster(h)
+    assert out.shape == (1, 5, 4096)
+
+
+def test_mlp_respects_base_dim_4096():
+    cluster = MLPCluster(seed=0, base_dim=4096)
+    h = torch.randn(1, 5, 4096)
+    out = cluster(h)
+    assert out.shape == (1, 5, 4096)

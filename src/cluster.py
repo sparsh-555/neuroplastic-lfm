@@ -10,15 +10,18 @@ class CfCCluster(nn.Module):
     AutoNCP.  The ODE-derived τ dynamics condition the effective time constant
     on token content and sequence position jointly — the key differentiator
     from a plain MLP adapter.  See MLPCluster for the ablation baseline.
+
+    base_dim must match the hidden dimension of the base model (2048 for LFM2.5-1.2B,
+    4096 for LLaMA-3-8B, etc.).
     """
-    BASE_DIM    = 2048
     CLUSTER_DIM = 64
     MOTOR_DIM   = 16
 
-    def __init__(self, seed: int = 0):
+    def __init__(self, seed: int = 0, base_dim: int = 2048):
         super().__init__()
+        self.base_dim    = base_dim
         wiring           = AutoNCP(units=64, output_size=16, sparsity_level=0.5, seed=seed)
-        self.adapter_in  = nn.Linear(self.BASE_DIM, self.CLUSTER_DIM)
+        self.adapter_in  = nn.Linear(self.base_dim, self.CLUSTER_DIM)
         # pos_proj maps normalised position [0,1] → CLUSTER_DIM and adds it to the
         # CfC input before each forward pass.  Because time_a and time_b inside each
         # CfCCell receive x = content_features + pos_embedding, the effective time
@@ -28,7 +31,7 @@ class CfCCluster(nn.Module):
         # slice which collapses (B,1)→(B,) and then fails to broadcast with (B,n_neurons).
         self.pos_proj    = nn.Linear(1, self.CLUSTER_DIM, bias=False)
         self.cfc         = CfC(self.CLUSTER_DIM, wiring, batch_first=True, return_sequences=True)
-        self.adapter_out = nn.Linear(self.MOTOR_DIM, self.BASE_DIM)
+        self.adapter_out = nn.Linear(self.MOTOR_DIM, self.base_dim)
         # Zero-init adapter_out (LoRA-style): cluster contributes exactly 0 at step 0,
         # preventing random noise from disrupting the base model before the CfC has
         # learned anything useful.  Gradient still flows because cfc_out is non-zero.
@@ -40,7 +43,7 @@ class CfCCluster(nn.Module):
         self.maturity    = nn.Parameter(torch.zeros(1))
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
-        # hidden: (B, L, BASE_DIM) — may be bfloat16 from base model
+        # hidden: (B, L, base_dim) — may be bfloat16 from base model
         h = hidden.float()
         x = self.adapter_in(h)                                       # (B, L, CLUSTER_DIM)
         B, L, _ = x.shape
@@ -48,7 +51,7 @@ class CfCCluster(nn.Module):
         x = x + self.pos_proj(pos)                                   # (B, L, CLUSTER_DIM)
         h0 = torch.zeros(B, self.CLUSTER_DIM, device=x.device, dtype=x.dtype)
         out, _ = self.cfc(x, h0)                                     # (B, L, MOTOR_DIM)
-        delta = self.adapter_out(out)                                 # (B, L, BASE_DIM)
+        delta = self.adapter_out(out)                                 # (B, L, base_dim)
         return (torch.sigmoid(self.maturity) * delta).to(hidden.dtype)
 
 
@@ -59,19 +62,20 @@ class MLPCluster(nn.Module):
     classes share: adapter_in, pos_proj, adapter_out (zero-init), and maturity
     gate — so the only variable is the processing block (CfC vs. MLP).
 
-    Approximate param count: ~171K vs CfCCluster ~187K.
+    Approximate param count (base_dim=2048): ~171K vs CfCCluster ~187K.
+    base_dim must match the hidden dimension of the base model.
     """
-    BASE_DIM    = 2048
     CLUSTER_DIM = 64
     MOTOR_DIM   = 16
 
-    def __init__(self, seed: int = 0):
+    def __init__(self, seed: int = 0, base_dim: int = 2048):
         super().__init__()
-        self.adapter_in  = nn.Linear(self.BASE_DIM, self.CLUSTER_DIM)
+        self.base_dim    = base_dim
+        self.adapter_in  = nn.Linear(self.base_dim, self.CLUSTER_DIM)
         self.pos_proj    = nn.Linear(1, self.CLUSTER_DIM, bias=False)
         self.ff1         = nn.Linear(self.CLUSTER_DIM, self.CLUSTER_DIM)
         self.ff2         = nn.Linear(self.CLUSTER_DIM, self.MOTOR_DIM)
-        self.adapter_out = nn.Linear(self.MOTOR_DIM, self.BASE_DIM)
+        self.adapter_out = nn.Linear(self.MOTOR_DIM, self.base_dim)
         nn.init.zeros_(self.adapter_out.weight)
         nn.init.zeros_(self.adapter_out.bias)
         self.maturity    = nn.Parameter(torch.zeros(1))
@@ -84,5 +88,5 @@ class MLPCluster(nn.Module):
         x = x + self.pos_proj(pos)
         x = torch.nn.functional.gelu(self.ff1(x))                   # (B, L, CLUSTER_DIM)
         out = self.ff2(x)                                            # (B, L, MOTOR_DIM)
-        delta = self.adapter_out(out)                                # (B, L, BASE_DIM)
+        delta = self.adapter_out(out)                                # (B, L, base_dim)
         return (torch.sigmoid(self.maturity) * delta).to(hidden.dtype)
