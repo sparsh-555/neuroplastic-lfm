@@ -46,7 +46,11 @@ class NeuroplasticLFM(nn.Module):
         if task_id is not None:
             cluster = self.registry.get(task_id)
             def hook(module, input, output):
-                # cluster.forward() handles float32↔backbone-dtype casting internally
+                # LFM returns a plain tensor; LLaMA / most HF models return a tuple
+                # (hidden_states, past_key_value, ...).  Handle both.
+                if isinstance(output, tuple):
+                    corrected = output[0] + cluster(output[0])
+                    return (corrected,) + output[1:]
                 return output + cluster(output)
             handle = self.base.model.layers[self.inject_at].register_forward_hook(hook)
 

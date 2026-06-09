@@ -152,22 +152,27 @@ adapters for any LLM or transformer. The novelty is architecture-independent, so
 
 ---
 
-### H6 — CfC vs MLP ablation ✅ RESOLVED (Run 010)
+### H6 — CfC vs MLP ablation — NEEDS VALID RE-RUN
 
-**Result (June 2026):** MLP ≥ CfC at this training scale (AP 0.818 vs 0.798, ΔAP = -0.020).
+**Run 010 (June 2026) is INVALIDATED.** The zero-init adapter_out introduced a gradient
+blockage: `adapter_out.weight.T @ grad = 0.T @ grad = 0`, so all time_a / time_b weights
+inside the CfCCells received zero gradient throughout the entire run.  The CfC operated
+with fixed random τ — the liquid property never activated.  Run 010 compared a
+"non-functioning CfC" vs MLP; the result is meaningless for the liquid dynamics question.
 
-**Decision: pivot to "NCP-wired growing adapter" framing.**
+**Fix (commit f5e0c64):** `nn.init.normal_(adapter_out.weight, std=1e-3)` replaces
+`nn.init.zeros_`.  Initial output noise is ~0.001 (0.01% of residual stream, negligible).
+Gradient norms to time_a now 0.02–0.06 (were 0.000000).
 
-The core contribution is the growing-architecture CL method (zero forgetting, label-free,
-few params, model-agnostic). CfC is the default substrate with a note that simpler adapters
-(MLP) also work and train 4× faster. The NCP sparse wiring is an interesting design property
-but not the primary differentiator.
+**Framing pivot retracted:** The "NCP-wired growing adapter" pivot from run 010 is retracted.
+CfC remains the primary substrate.  The valid CfC vs MLP comparison is Run 012 (pending).
 
-**CL properties unaffected:** Both CfC and MLP have BWT=0, F.Ra=0.
+**Pending question:** Does liquid CfC (with working τ) outperform MLP?
+- If yes: τ dynamics do real work, CfC substrate is the differentiator
+- If no: pivot to growing-adapter framing (but with honest evidence, not a broken test)
 
-**Remaining question:** Does the gap persist on LLaMA-3-8B or reverse at larger scale? The
-LLaMA run (step 6) should include both CfC and MLP variants to answer this — if CfC wins on
-LLaMA, the substrate may be scale-sensitive rather than genuinely inferior.
+**One valid finding from run 010:** Training speed — CfC is ~4× slower than MLP per step
+(5.2 vs 20.5 it/s).  This is a real cost regardless of whether τ learns.
 
 ---
 
@@ -254,9 +259,13 @@ Fix in this order — each step unblocks the next:
 3. [~1 week]  Re-run cl_benchmark.py on LFM with fixed gate; confirm AP improves
               → Baseline results: AP 0.808, BWT 0.000, F.Ra 0.000 (gate broken)
 
-4. [DONE]     CfC vs MLP ablation on LFM — MLP wins by 2 AP (0.818 vs 0.798)
-              → Framing pivoted to "NCP-wired growing adapter"; CfC is one option
-              → Both have zero forgetting; CfC 4× slower per training step
+4. [INVALID]  CfC vs MLP ablation Run 010 — gradient blockage (zero-init adapter_out)
+              → CfC τ received 0 gradient; comparison was "broken CfC vs MLP"
+              → Framing pivot RETRACTED; fix in commit f5e0c64 (std=1e-3 init)
+              → Re-run as Run 012 with fixed gradient flow
+
+4b.[~1 day]   Re-run CfC vs MLP ablation (Run 012) — with gradient flow restored
+              → Watch τ_a_std in log: growing std = τ specialising = liquid active
 
 5. [~3 days]  Add O-LoRA as honest peer comparison (zero-forgetting guarantee)
 

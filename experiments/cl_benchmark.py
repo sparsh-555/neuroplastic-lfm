@@ -185,7 +185,7 @@ def run_neuroplastic(
     Spawns one frozen CfC cluster per task.  Prior clusters are immutable;
     forgetting is architecturally impossible.  No task labels at inference.
     """
-    model = NeuroplasticLFM(base, seed=0).to(device)
+    model = NeuroplasticLFM(base, seed=0, base_dim=2048).to(device)
     acc_matrix: List[Dict[str, float]] = []
 
     for i, task in enumerate(TASK_ORDER):

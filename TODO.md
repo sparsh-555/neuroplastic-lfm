@@ -17,7 +17,9 @@
 - [x] Run 009: gate-fixed benchmark run — AP: seq 0.814 / pt 0.842 / nplm 0.798; BWT: nplm 0.000
 - [x] Framing resolved — Path A (NeuroplasticLM general); Path B deprecated; no prior CfC-as-adapter work found
 - [x] HAM (arXiv 2509.13211) confirmed as closest prior art — LoRA substrate, vision only
-- [x] Run 010: CfC vs MLP ablation — MLP wins AP 0.818 vs 0.798; framing → NCP-wired growing adapter
+- [x] Run 010: CfC vs MLP ablation — INVALIDATED (zero-init adapter_out blocked all CfC τ gradients; broken CfC vs MLP, not liquid CfC vs MLP)
+- [x] Gradient flow fix — nn.init.normal_(adapter_out.weight, std=1e-3) in both CfCCluster and MLPCluster; τ grad norms now 0.02–0.06
+- [x] LLaMA hook fix — model.py hook now handles tuple layer output (LlamaDecoderLayer returns (hidden, ...) not plain tensor)
 
 ---
 
@@ -92,18 +94,24 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 ## P1: Core Architecture Validity
 
-- [ ] **CfC vs MLP ablation on both models** — resolves both the core novelty claim AND the Path A/B framing decision
-  - Build a 187K MLP adapter (same `adapter_in(d_model→64) → ReLU → adapter_out(16→d_model)`, same injection point, same maturity gate)
-  - Run on LFM (d_model=2048) AND LLaMA-3-8B (d_model=4096, inject_at=16)
-  - Compare AP / F.Ra / BWT on both
-  - **If `(CfC - MLP)` gap is larger on LFM than LLaMA:** Path B holds — CfC is genuinely synergistic with LFM's liquid architecture
-  - **If gap is similar on both:** Take Path A — method is general, CfC is one valid adapter architecture among others
+- [ ] **Run 011: cl_benchmark.py with fixed gradient flow** — first valid 3-way comparison
+  - Previous run 009 had zero-init adapter_out → CfC τ received zero gradient
+  - Now: `nn.init.normal_(adapter_out.weight, std=1e-3)` — gradient flows to time_a/time_b
+  - Watch τ_a_std in log: if it grows during training, liquid dynamics are activating
+  - Run: `PYTHONPATH=/neuroplastic-lfm python experiments/cl_benchmark.py`
 
-- [ ] **Maturity gate direction** — architectural coherence issue
-  - Gate starts at sigmoid(-3) ≈ 0.047 and decreases to ~0.031 during training
-  - This means cluster injection *weakens* as training proceeds (wrong direction for "maturity")
-  - Either: rename to "dampening gate" and justify the correction-shrinking interpretation
-  - Or: flip the gate design so it opens (sigmoid initialised to < 0 with positive gradient pressure)
+- [ ] **Run 012: CfC vs MLP ablation with fixed gradient flow** — first valid ablation
+  - Run 010 compared broken CfC vs MLP (τ grad = 0.000000 throughout)
+  - Now CfC will actually use its liquid dynamics; compare τ_a_std (CfC) vs no-τ (MLP)
+  - Run: `PYTHONPATH=/neuroplastic-lfm python experiments/mlp_ablation.py`
+  - Decision criteria (set before seeing results):
+    - CfC AP > MLP AP by >1 point: τ dynamics contribute, CfC substrate justified
+    - CfC ≈ MLP (within 1 point): pivot to "NCP-wired growing adapter" framing
+    - MLP AP > CfC AP by >1 point: same pivot (with honest evidence this time)
+
+- [ ] **Gate direction** — current gate oscillates near 0.5 and doesn't open further
+  - Once loss ≈ 0, gradient on gate ≈ 0 (no signal to open further)
+  - Second-order issue; not blocking current experiments but worth investigating
 
 - [ ] **Label-free spawning validation on 5+ tasks**
   - `sequential_tasks.py` manually calls `spawn_cluster(task_name)` — this requires knowing task boundaries
