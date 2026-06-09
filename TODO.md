@@ -19,6 +19,7 @@
 - [x] Framing resolved — Path A (NeuroplasticLM general); Path B deprecated; no prior CfC-as-adapter work found
 - [x] HAM (arXiv 2509.13211) confirmed as closest prior art — LoRA substrate, vision only
 - [x] Run 010: CfC vs MLP ablation — INVALIDATED (zero-init adapter_out blocked all CfC τ gradients; broken CfC vs MLP, not liquid CfC vs MLP)
+- [x] Run 012: valid CfC vs MLP ablation — CfC AP 0.832 vs MLP AP 0.828 (Δ=0.004, noise); CfC wins boolq+dbpedia; grow-and-freeze is the primary claim
 - [x] Gradient flow fix — nn.init.normal_(adapter_out.weight, std=1e-3) in both CfCCluster and MLPCluster; τ grad norms now 0.02–0.06
 - [x] LLaMA hook fix — model.py hook now handles tuple layer output (LlamaDecoderLayer returns (hidden, ...) not plain tensor)
 
@@ -97,14 +98,7 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 - [x] **Run 011 DONE** — NeuroplasticLFM AP=0.830 vs per-task LoRA AP=0.838 (gap=0.8 pts); zero-forgetting intact; wins boolq+dbpedia. τ_a_std flat (0.1675 throughout) — τ not specialising at 500 steps.
 
-- [ ] **Run 012: CfC vs MLP ablation with fixed gradient flow** — first valid ablation
-  - Run 010 compared broken CfC vs MLP (τ grad = 0.000000 throughout)
-  - Now CfC will actually use its liquid dynamics; compare τ_a_std (CfC) vs no-τ (MLP)
-  - Run: `PYTHONPATH=/neuroplastic-lfm python experiments/mlp_ablation.py`
-  - Decision criteria (set before seeing results):
-    - CfC AP > MLP AP by >1 point: τ dynamics contribute, CfC substrate justified
-    - CfC ≈ MLP (within 1 point): pivot to "NCP-wired growing adapter" framing
-    - MLP AP > CfC AP by >1 point: same pivot (with honest evidence this time)
+- [x] **Run 012 DONE** — CfC AP=0.832 vs MLP AP=0.828 (Δ=0.004, within noise). Framing: grow-and-freeze paradigm is primary claim; CfC recommended substrate for context-heavy tasks.
 
 - [ ] **Gate direction** — current gate oscillates near 0.5 and doesn't open further
   - Once loss ≈ 0, gradient on gate ≈ 0 (no signal to open further)

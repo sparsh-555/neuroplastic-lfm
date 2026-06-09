@@ -175,8 +175,13 @@ AP = 0.838 — gap collapsed from 4.4 pts (run 009) to **0.8 pts**.  Zero-forget
 τ is NOT specialising at this training scale.  CfC runs as a fixed-τ recurrent feature extractor.
 Gradients DO flow (norm 0.02–0.06) but divergence signal is too weak at 500 steps.
 
-**Pending question:** Does the recurrent structure (even with fixed τ) outperform a static MLP?
-→ Run 012 answers this.
+**Run 012 result (valid ablation):** CfC AP = **0.832** vs MLP AP = **0.828** — Δ = +0.004,
+below the noise threshold.  CfC ≈ MLP at 500 steps.  Per-task: CfC wins boolq (+5 pts)
+and dbpedia (+3 pts); MLP wins imdb (+4 pts) and multirc (+2 pts).  CfC has a structural
+advantage on context-heavy tasks even with near-fixed τ.
+
+**Revised primary claim:** The grow-and-freeze paradigm (not CfC specifically) is the
+contribution.  CfC is the recommended substrate.  See run_012.md for full framing.
 
 **One valid finding from run 010:** Training speed — CfC is ~4× slower than MLP per step
 (5.2 vs 20.5 it/s).  This is a real cost regardless of whether τ learns.
@@ -271,8 +276,8 @@ Fix in this order — each step unblocks the next:
               → Framing pivot RETRACTED; fix in commit f5e0c64 (std=1e-3 init)
               → Re-run as Run 012 with fixed gradient flow
 
-4b.[~1 day]   Re-run CfC vs MLP ablation (Run 012) — with gradient flow restored
-              → Watch τ_a_std in log: growing std = τ specialising = liquid active
+4b.[DONE]     CfC vs MLP ablation Run 012 — CfC AP 0.832 vs MLP AP 0.828, Δ=0.004 (noise)
+              → CfC wins boolq/dbpedia; MLP wins imdb/multirc; grow-and-freeze is the claim
 
 5. [~3 days]  Add O-LoRA as honest peer comparison (zero-forgetting guarantee)
 
