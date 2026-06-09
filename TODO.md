@@ -24,12 +24,14 @@
 
 ## P1: Critical before professor meeting or any submission
 
-- [ ] **Multi-task sequential experiment** — most urgent missing piece
-  - At 2 tasks LoRA forgetting is -0.24% (negligible); NeuroplasticLFM's architectural
-    guarantee only becomes decisive at 5-10 tasks where sequential LoRA degrades
-  - Design: 5 tasks sequential (e.g. science, creative, math, coding, history from Alpaca)
-  - Compare: LoRA r=8 (best lr=1e-5) vs NeuroplasticLFM — measure task-1 PPL after task-5
-  - This is the experiment that makes the paper's core claim empirically demonstrable
+- [ ] **Run sequential_tasks.py on RunPod** — code is ready, needs execution
+  - `git pull && PYTHONPATH=/neuroplastic-lfm python experiments/sequential_tasks.py`
+  - 5 tasks: science → creative → math → coding → history (Alpaca keyword filter)
+  - Sequential LoRA: one shared adapter lr=1e-5, optimizer persists across tasks
+  - NeuroplasticLFM: one new frozen CfC cluster per task
+  - Metric: task-1 (science) PPL trajectory + full backward-transfer matrix
+  - Expected: LoRA forgetting compounds; NeuroplasticLFM stays at exact 0
+  - ~36 min total (5×2 runs × 500 steps)
 
 - [ ] **Visualization notebook** (`notebooks/visualize_tau.ipynb`)
   - Forgetting comparison bar chart across methods (full FT / LoRA / NeuroplasticLFM)
