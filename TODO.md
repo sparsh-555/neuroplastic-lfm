@@ -6,72 +6,121 @@
 - [x] Variable τ dynamics via `pos_proj` positional embedding
 - [x] TIES-Merging on CfC task vectors
 - [x] `baseline_finetuning.py` — catastrophic forgetting demo (+138%)
-- [x] `lora_baseline.py` — lr sweep [1e-5, 5e-5, 1e-4, 3e-4], best-of-sweep reported
-  - Result: best lr=1e-5, sci 2.35, cre 3.70, forgetting -0.24%
-  - LoRA at proper lr is better than NeuroplasticLFM on raw PPL (2.35 vs 2.42)
-  - Paper narrative repositioned: architectural guarantee + 2.4× fewer params + label-free
-- [x] `adaptive_spawning.py` — autonomous spawning with recalibrating baseline
-  - Cooldown + buffer reset implemented; recalibration after each spawn
-  - 2 spawns on creative (legitimate: sub-distribution diversity); creative 4.36→3.87
-- [x] Multi-seed infrastructure — seed flows NeuroplasticLFM → ClusterRegistry → AutoNCP
+- [x] `lora_baseline.py` — lr sweep [1e-5, 5e-5, 1e-4, 3e-4], best lr=1e-5: sci 2.35, cre 3.70, forgetting -0.24%
+- [x] `adaptive_spawning.py` — cooldown + buffer reset + recalibrating baseline; 2 spawns on creative
+- [x] Multi-seed infrastructure — seed flows NeuroplasticLFM → ClusterRegistry → AutoNCP; confirmed real variance (sci 2.41 ± 0.01)
+- [x] `sequential_tasks.py` — 3-way comparison: sequential LoRA vs per-task LoRA vs NeuroplasticLFM on 5 tasks
 - [x] Run 007 results documented
 
-## P0: Needs RunPod re-run (code is ready, just needs execution)
+---
 
-- [ ] **Multi-seed re-run** — `git pull && python experiments/multi_seed_eval.py`
-  - Seed fix pushed (4899f03); previous run gave ±0.00 because AutoNCP seed was hardcoded
-  - Should now show real variance across seeds 0, 1, 2
+## Venue Reality Check
 
-## P1: Critical before professor meeting or any submission
+**NeurIPS 2026 main track: CLOSED** (deadline was May 6, 2026).
 
-- [ ] **Run sequential_tasks.py on RunPod** — code is ready, needs execution
-  - `git pull && PYTHONPATH=/neuroplastic-lfm python experiments/sequential_tasks.py`
-  - 5 tasks: science → creative → math → coding → history (Alpaca keyword filter)
-  - Sequential LoRA: one shared adapter lr=1e-5, optimizer persists across tasks
-  - NeuroplasticLFM: one new frozen CfC cluster per task
-  - Metric: task-1 (science) PPL trajectory + full backward-transfer matrix
-  - Expected: LoRA forgetting compounds; NeuroplasticLFM stays at exact 0
-  - ~36 min total (5×2 runs × 500 steps)
+Realistic targets:
+| Venue | Deadline | Notes |
+|---|---|---|
+| EMNLP 2026 | ~June–July 2026 | Check ARR deadline — may still be open |
+| NeurIPS 2026 Workshop | ~Sept–Oct 2026 | ContinualAI or LoRA workshops |
+| ICLR 2027 | ~Oct 2026 | 4 months away — achievable with focused work |
+| ICML 2027 | ~Feb 2027 | Most time, but field moves fast |
 
-- [ ] **Visualization notebook** (`notebooks/visualize_tau.ipynb`)
-  - Forgetting comparison bar chart across methods (full FT / LoRA / NeuroplasticLFM)
-  - Gate curve over training steps (0.047 → 0.031)
-  - τ dynamics (pos_proj weights across sequence positions)
-  - CfC wiring diagram
+**Recommendation:** Target ICLR 2027. Use the next 4 months to fix the two blockers below.
 
-## P2: Required for NeurIPS full paper
+---
 
-### Baselines
+## P0: BLOCKERS — Fix these before anything else
 
-- [ ] **GainLoRA** (NeurIPS 2025) — most direct competitor; uses gating on LoRA branches
-  - Differentiator: GainLoRA gates weight-space LoRA updates; we gate CfC liquid dynamics
-    injected mid-model with position-dependent time constants
-  - Need either comparison results or a clear differentiation paragraph
-- [ ] **O-LoRA / OPLoRA** (Oct 2025) — orthogonal projection LoRA, mathematical forgetting guarantee
-  - Direct comparison to our architectural zero-forgetting claim
-- [ ] **EWC-LoRA** (ICLR 2026) — EWC + LoRA, replaces raw EWC as regularization baseline
-  - Code: github.com/Yaoyz96/low-rank-cl
-- [ ] **ASO-LoRA** — multi-LoRA no task labels (comparable to our autonomous spawning)
+### 1. Evaluation pipeline rewrite (metric + benchmark)
+**This single item blocks everything else.** Every 2025-2026 CL-LLM paper uses accuracy on NLP classification tasks. PPL cannot be compared against any existing work.
 
-### Benchmarks
+**Benchmark to use:** Long Sequence Benchmark (same as CaLoRA NeurIPS 2025)
+- Task 1: Yelp (sentiment)
+- Task 2: IMDB (sentiment)
+- Task 3: BoolQA (question answering)
+- Task 4: MultiRec (question answering)
+- Task 5: DBpedia (topic classification)
 
-- [ ] **Replace Alpaca keyword filtering with TRACE or Seq-GLUE**
-  - All 2025 CL-for-LLM papers use TRACE (8-task) or Seq-GLUE; keyword splits will be
-    the first reviewer comment
-  - Needed for multi-task experiment above anyway
+Or TRACE-8 (8 tasks, more common in 2025 papers).
 
-### Ablations
+**Metrics to implement:**
+- **AP** (Average Performance): `1/T × Σ Acc_{T,Ti}` — mean accuracy across all tasks after final task
+- **F.Ra** (Forgetting Rate): `1/(T-1) × Σ (max_k Acc_{k,Ti} − Acc_{T,Ti})` — how much was forgotten
+- **BWT** (Backward Transfer): `1/(T-1) × Σ (Acc_{T,Ti} − Acc_{Ti,Ti})` — net effect of later tasks on earlier
+- **FWT** (Forward Transfer): `1/(T-1) × Σ (Acc_{Ti,Ti} − Acc_{0,Ti})` — whether earlier tasks helped later ones
+
+**Impact:** Once metrics/benchmark are right, all other experiments (ablations, baselines, multi-seed) are run once and done correctly.
+
+### 2. Run sequential_tasks.py on RunPod (ready, needs execution)
+```bash
+git pull && PYTHONPATH=/neuroplastic-lfm python experiments/sequential_tasks.py
+```
+Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and NeuroplasticLFM stay at 0.
+~50 min total (5 tasks × 3 methods × 500 steps each).
+
+---
+
+## P1: Core Architecture Validity
+
+- [ ] **CfC vs MLP ablation** — most important ablation
+  - Build a 187K MLP adapter (same `adapter_in → hidden → adapter_out`, same injection at layer 8)
+  - Train on same tasks, same steps, compare AP / F.Ra / BWT
+  - If MLP ≈ CfC on all metrics: the CfC contribution needs reframing
+  - If CfC > MLP: this is the differentiating result
+
+- [ ] **Maturity gate direction** — architectural coherence issue
+  - Gate starts at sigmoid(-3) ≈ 0.047 and decreases to ~0.031 during training
+  - This means cluster injection *weakens* as training proceeds (wrong direction for "maturity")
+  - Either: rename to "dampening gate" and justify the correction-shrinking interpretation
+  - Or: flip the gate design so it opens (sigmoid initialised to < 0 with positive gradient pressure)
+
+- [ ] **Label-free spawning validation on 5+ tasks**
+  - `sequential_tasks.py` manually calls `spawn_cluster(task_name)` — this requires knowing task boundaries
+  - Need an end-to-end run where the model encounters a 5-task stream with no labels and adaptive_spawning drives all spawns
+  - Science stream never triggered in 2-task demo; fix calibration for more domains first
+
+---
+
+## P2: Baselines (required for paper)
+
+- [ ] **O-LoRA** — has zero-forgetting guarantee via orthogonal subspaces; most direct peer
+  - Code: `github.com/cmnfriend/O-LoRA`
+  - This is the baseline reviewers will ask about most; "sequential LoRA" will be seen as a strawman
+- [ ] **CaLoRA** (NeurIPS 2025) — PEFT-based CL with *backward* knowledge transfer; current SOTA
+  - Missed in original baseline list; now the paper to beat
+- [ ] **GainLoRA** (NeurIPS 2025) — most direct structural competitor (gating on LoRA branches)
+- [ ] **EWC-LoRA** (ICLR 2026) — `github.com/Yaoyz96/low-rank-cl`
+- [ ] **InfLoRA** / **SD-LoRA** — NeurIPS 2025 orthogonal LoRA variants (brief comparison or mention in related work)
+
+---
+
+## P3: Generalization and Significance
+
+- [ ] **Second base model** — test on LLaMA-3-8B or Mistral-7B
+  - LFM2.5-1.2B is unknown outside LiquidAI; results need to transfer to a well-known model
+- [ ] **5 seeds + statistical significance** — t-test or Wilcoxon across seeds
+  - Current 3-seed run gives ±0.01 variance; good, but formal test needed
+- [ ] **Inference latency analysis** — measure per-token latency with N=1, 3, 5 clusters active
+  - N clusters = N forward hook evaluations; need to show overhead is acceptable
+
+---
+
+## P4: Ablations
 
 - [ ] `inject_at` positions: 4, 6, 8, 10, 12 — justify layer 8 empirically
 - [ ] Cluster sizes: CLUSTER_DIM 16, 32, 64, 128
 - [ ] Gate initialization: -5.0, -3.0, -1.0
-- [ ] Statistical significance — t-test / Wilcoxon across 3 seeds (needs multi-seed re-run first)
+- [ ] With/without TIES merging (compare vs simple weight averaging)
 
-## P3: Polish
+---
 
-- [ ] **Related work differentiation paragraph** — GainLoRA vs NeuroplasticLFM
-- [ ] Fix adaptive spawning calibration — science stream never triggers; calibrate on
-  neutral held-out examples so science also triggers a spawn
+## P5: Polish
+
+- [ ] Visualization notebook (`notebooks/visualize_tau.ipynb`)
+  - Forgetting bar chart: full FT / seq LoRA / per-task LoRA / O-LoRA / NeuroplasticLFM
+  - Gate curve; τ dynamics; CfC wiring diagram
+- [ ] Related work differentiation: CaLoRA vs NeuroplasticLFM; GainLoRA vs NeuroplasticLFM
 - [ ] Paper writeup (method, results, related work sections)
-- [ ] Update `PLAN.md` — currently says 10 GatedConv + 6 GQA; actual is interleaved
+- [ ] Replace PLAN.md — currently incorrect about layer types
 - [ ] Document LoRA lr sweep results in `results/` (currently only in RunPod stdout)
