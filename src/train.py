@@ -24,9 +24,13 @@ def extract_tau_stats(cluster) -> Dict[str, float]:
             stats[f"time_a_l{i}_mean"] = layer.time_a.weight.data.mean().item()
             stats[f"time_b_l{i}_mean"] = layer.time_b.weight.data.mean().item()
             stats[f"time_a_l{i}_std"]  = layer.time_a.weight.data.std().item()
-        # Aggregate across layers for convenience (used in log line)
+        # Aggregate across layers for convenience (used in log line).
+        # time_a_std is the key diagnostic: if it grows during training, individual
+        # neurons are specialising to different time constants — liquid property active.
         ta_means = [stats[f"time_a_l{i}_mean"] for i in range(cell.num_layers)]
+        ta_stds  = [stats[f"time_a_l{i}_std"]  for i in range(cell.num_layers)]
         stats["time_a_mean"] = sum(ta_means) / len(ta_means)
+        stats["time_a_std"]  = sum(ta_stds)  / len(ta_stds)
         return stats
     except AttributeError:
         return {}
@@ -41,9 +45,7 @@ def train_cluster(
     log_every: int = 50,
 ) -> List[Dict]:
     cluster = model.registry.get(task_id)
-    # Maturity gate gets 5× higher lr to break the bootstrapping trap:
-    # sigmoid'(-3) ≈ 0.045 suppresses the gate gradient at every step.
-    # 5× is enough to open the gate to ~0.3-0.5 without overshooting.
+    # Maturity gate gets 5× higher lr so it can open faster than the adapter weights.
     maturity_params = [cluster.maturity]
     other_params    = [p for n, p in cluster.named_parameters()
                        if p.requires_grad and n != "maturity"]
@@ -86,7 +88,14 @@ def train_cluster(
             τ_info = extract_tau_stats(cluster)
             record = {"step": step, "loss": loss.item(), "gate": gate, **τ_info}
             history.append(record)
-            τ_str = f"  τ_a={τ_info.get('time_a_mean', 0):.4f}" if τ_info else ""
+            # τ_a_std is the key signal: if it grows, neurons are specialising to
+            # different time constants — the liquid property is activating.
+            # τ_a_mean near 0 is expected; watch τ_a_std diverge from its init value.
+            if τ_info:
+                τ_str = (f"  τ_a_mean={τ_info.get('time_a_mean', 0):.4f}"
+                         f"  τ_a_std={τ_info.get('time_a_std', 0):.4f}")
+            else:
+                τ_str = ""
             print(f"  step={step:4d}  loss={loss.item():.4f}  gate={gate:.4f}{τ_str}")
 
     return history

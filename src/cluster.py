@@ -8,11 +8,17 @@ class CfCCluster(nn.Module):
     """
     Recurrent adapter using Closed-form Continuous-time (CfC) cells wired by
     AutoNCP.  The ODE-derived τ dynamics condition the effective time constant
-    on token content and sequence position jointly — the key differentiator
-    from a plain MLP adapter.  See MLPCluster for the ablation baseline.
+    on token content and sequence position jointly.
 
     base_dim must match the hidden dimension of the base model (2048 for LFM2.5-1.2B,
     4096 for LLaMA-3-8B, etc.).
+
+    Initialisation strategy (critical):
+      adapter_out uses small-random init (std=1e-3) rather than zero-init.
+      Zero-init would block gradients: adapter_out.weight.T @ grad = 0, so the CfC
+      and its τ projections receive no gradient signal.  std=1e-3 keeps initial output
+      noise at ~0.01% of residual stream magnitude (negligible) while preserving the
+      full gradient path to time_a / time_b inside each CfCCell.
     """
     CLUSTER_DIM = 64
     MOTOR_DIM   = 16
@@ -23,23 +29,16 @@ class CfCCluster(nn.Module):
         wiring           = AutoNCP(units=64, output_size=16, sparsity_level=0.5, seed=seed)
         self.adapter_in  = nn.Linear(self.base_dim, self.CLUSTER_DIM)
         # pos_proj maps normalised position [0,1] → CLUSTER_DIM and adds it to the
-        # CfC input before each forward pass.  Because time_a and time_b inside each
-        # CfCCell receive x = content_features + pos_embedding, the effective time
-        # constant τ = sigmoid(time_a(x)*1 + time_b(x)) becomes jointly conditioned
-        # on token content AND sequence position — the functional neuroplasticity signal.
+        # CfC input before each forward pass.  time_a and time_b inside each CfCCell
+        # receive x = content_features + pos_embedding, so τ is conditioned jointly
+        # on token content AND sequence position.
         # ncps' timespans API cannot be used here: it calls .squeeze() on the per-step
-        # slice which collapses (B,1)→(B,) and then fails to broadcast with (B,n_neurons).
+        # slice which collapses (B,1)→(B,) and fails to broadcast with (B,n_neurons).
         self.pos_proj    = nn.Linear(1, self.CLUSTER_DIM, bias=False)
         self.cfc         = CfC(self.CLUSTER_DIM, wiring, batch_first=True, return_sequences=True)
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.base_dim)
-        # Zero-init adapter_out (LoRA-style): cluster contributes exactly 0 at step 0,
-        # preventing random noise from disrupting the base model before the CfC has
-        # learned anything useful.  Gradient still flows because cfc_out is non-zero.
-        nn.init.zeros_(self.adapter_out.weight)
+        nn.init.normal_(self.adapter_out.weight, std=1e-3)
         nn.init.zeros_(self.adapter_out.bias)
-        # Gate initialized to sigmoid(0) = 0.5.  At step 0 this is irrelevant because
-        # adapter_out=0 forces delta=0.  Once adapter_out learns, sigmoid'(0)=0.25
-        # gives ~5× better gradient flow than the previous sigmoid(-3) init.
         self.maturity    = nn.Parameter(torch.zeros(1))
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
@@ -59,11 +58,13 @@ class MLPCluster(nn.Module):
     """
     Ablation baseline for CfCCluster.  Replaces the recurrent CfC block with a
     2-layer feed-forward network of identical input/output dimensions.  Both
-    classes share: adapter_in, pos_proj, adapter_out (zero-init), and maturity
-    gate — so the only variable is the processing block (CfC vs. MLP).
+    classes share: adapter_in, pos_proj, adapter_out, and maturity gate — so the
+    only variable is the processing block (CfC ODE dynamics vs. static MLP).
+
+    Uses the same small-random adapter_out init as CfCCluster so both start with
+    near-zero output and identical gradient flow conditions.
 
     Approximate param count (base_dim=2048): ~171K vs CfCCluster ~187K.
-    base_dim must match the hidden dimension of the base model.
     """
     CLUSTER_DIM = 64
     MOTOR_DIM   = 16
@@ -76,7 +77,7 @@ class MLPCluster(nn.Module):
         self.ff1         = nn.Linear(self.CLUSTER_DIM, self.CLUSTER_DIM)
         self.ff2         = nn.Linear(self.CLUSTER_DIM, self.MOTOR_DIM)
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.base_dim)
-        nn.init.zeros_(self.adapter_out.weight)
+        nn.init.normal_(self.adapter_out.weight, std=1e-3)
         nn.init.zeros_(self.adapter_out.bias)
         self.maturity    = nn.Parameter(torch.zeros(1))
 
