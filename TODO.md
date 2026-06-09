@@ -10,7 +10,13 @@
 - [x] `adaptive_spawning.py` — cooldown + buffer reset + recalibrating baseline; 2 spawns on creative
 - [x] Multi-seed infrastructure — seed flows NeuroplasticLFM → ClusterRegistry → AutoNCP; confirmed real variance (sci 2.41 ± 0.01)
 - [x] `sequential_tasks.py` — 3-way comparison: sequential LoRA vs per-task LoRA vs NeuroplasticLFM on 5 tasks
-- [x] Run 007 results documented
+- [x] Run 007 results documented (PPL era)
+- [x] Long Sequence Benchmark eval pipeline — `src/benchmark.py`, `src/cl_metrics.py`, `experiments/cl_benchmark.py`
+- [x] Gate fix — zero-init adapter_out + gate init 0 + remove clamp (LoRA-style, LLaMA-Adapter)
+- [x] Run 008: first benchmark run (broken gate) — AP: seq 0.800 / pt 0.842 / nplm 0.808; BWT: nplm 0.000
+- [x] Run 009: gate-fixed benchmark run — AP: seq 0.814 / pt 0.842 / nplm 0.798; BWT: nplm 0.000
+- [x] Framing resolved — Path A (NeuroplasticLM general); Path B deprecated; no prior CfC-as-adapter work found
+- [x] HAM (arXiv 2509.13211) confirmed as closest prior art — LoRA substrate, vision only
 
 ---
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from typing import Optional
+from typing import Optional, Type
+from src.cluster import CfCCluster
 from src.registry import ClusterRegistry
 
 # After layer 8 (3rd attention block at index 2,5,8), 7 layers + embedding_norm remain.
@@ -10,11 +11,17 @@ INJECT_AT = 8
 
 
 class NeuroplasticLFM(nn.Module):
-    def __init__(self, base_model: nn.Module, inject_at: int = INJECT_AT, seed: int = 0):
+    def __init__(
+        self,
+        base_model: nn.Module,
+        inject_at: int = INJECT_AT,
+        seed: int = 0,
+        cluster_cls: Type[nn.Module] = CfCCluster,
+    ):
         super().__init__()
         self.base      = base_model
         self.lm_head   = base_model.lm_head
-        self.registry  = ClusterRegistry(seed=seed)
+        self.registry  = ClusterRegistry(seed=seed, cluster_cls=cluster_cls)
         self.inject_at = inject_at
         self._freeze_base()
 

@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
-from typing import Dict, Optional
+from typing import Dict, Optional, Type
 from src.cluster import CfCCluster
 
 
 class ClusterRegistry(nn.Module):
-    def __init__(self, seed: int = 0):
+    def __init__(self, seed: int = 0, cluster_cls: Type[nn.Module] = CfCCluster):
         super().__init__()
         self.clusters: nn.ModuleDict = nn.ModuleDict()
         self.base_init: Optional[Dict[str, torch.Tensor]] = None
@@ -13,8 +13,9 @@ class ClusterRegistry(nn.Module):
         # (task vector = trained_params - base_init requires identical starting point).
         # Different runs use different seeds to measure initialization variance.
         self._cluster_seed = seed
+        self._cluster_cls = cluster_cls
 
-    def spawn(self, task_id: str) -> CfCCluster:
+    def spawn(self, task_id: str) -> nn.Module:
         # Freeze all existing clusters
         for cluster in self.clusters.values():
             for param in cluster.parameters():
@@ -22,7 +23,7 @@ class ClusterRegistry(nn.Module):
 
         # Reset RNG to the shared per-run seed so all clusters start identically
         torch.manual_seed(self._cluster_seed)
-        cluster = CfCCluster(seed=self._cluster_seed)
+        cluster = self._cluster_cls(seed=self._cluster_seed)
 
         # Store base_init on first spawn (before any training)
         if self.base_init is None:
@@ -37,7 +38,7 @@ class ClusterRegistry(nn.Module):
         self.clusters[task_id] = cluster
         return cluster
 
-    def get(self, task_id: str) -> CfCCluster:
+    def get(self, task_id: str) -> nn.Module:
         if task_id not in self.clusters:
             raise KeyError(
                 f"No cluster for task '{task_id}'. "
