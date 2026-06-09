@@ -167,9 +167,16 @@ Gradient norms to time_a now 0.02–0.06 (were 0.000000).
 **Framing pivot retracted:** The "NCP-wired growing adapter" pivot from run 010 is retracted.
 CfC remains the primary substrate.  The valid CfC vs MLP comparison is Run 012 (pending).
 
-**Pending question:** Does liquid CfC (with working τ) outperform MLP?
-- If yes: τ dynamics do real work, CfC substrate is the differentiator
-- If no: pivot to growing-adapter framing (but with honest evidence, not a broken test)
+**Run 011 result (fixed gradient flow):** NeuroplasticLFM AP = **0.830** vs per-task LoRA
+AP = 0.838 — gap collapsed from 4.4 pts (run 009) to **0.8 pts**.  Zero-forgetting intact
+(BWT=0, F.Ra=0).  NeuroplasticLFM wins boolq (0.810 vs 0.790) and dbpedia (0.990 vs 0.950).
+
+**τ_a_std observation:** std was 0.1675 at step 0 and flat throughout all 5 tasks / 500 steps.
+τ is NOT specialising at this training scale.  CfC runs as a fixed-τ recurrent feature extractor.
+Gradients DO flow (norm 0.02–0.06) but divergence signal is too weak at 500 steps.
+
+**Pending question:** Does the recurrent structure (even with fixed τ) outperform a static MLP?
+→ Run 012 answers this.
 
 **One valid finding from run 010:** Training speed — CfC is ~4× slower than MLP per step
 (5.2 vs 20.5 it/s).  This is a real cost regardless of whether τ learns.

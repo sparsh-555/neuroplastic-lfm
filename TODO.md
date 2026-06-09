@@ -14,7 +14,8 @@
 - [x] Long Sequence Benchmark eval pipeline — `src/benchmark.py`, `src/cl_metrics.py`, `experiments/cl_benchmark.py`
 - [x] Gate fix — zero-init adapter_out + gate init 0 + remove clamp (LoRA-style, LLaMA-Adapter)
 - [x] Run 008: first benchmark run (broken gate) — AP: seq 0.800 / pt 0.842 / nplm 0.808; BWT: nplm 0.000
-- [x] Run 009: gate-fixed benchmark run — AP: seq 0.814 / pt 0.842 / nplm 0.798; BWT: nplm 0.000
+- [x] Run 009: gate-fixed benchmark run — AP: seq 0.814 / pt 0.842 / nplm 0.798; BWT: nplm 0.000 (⚠ gradient blockage — superseded by Run 011)
+- [x] Run 011: fixed gradient flow — AP: seq 0.810 / pt 0.838 / nplm **0.830**; BWT: nplm 0.000; gap vs per-task LoRA collapsed to 0.8 pts
 - [x] Framing resolved — Path A (NeuroplasticLM general); Path B deprecated; no prior CfC-as-adapter work found
 - [x] HAM (arXiv 2509.13211) confirmed as closest prior art — LoRA substrate, vision only
 - [x] Run 010: CfC vs MLP ablation — INVALIDATED (zero-init adapter_out blocked all CfC τ gradients; broken CfC vs MLP, not liquid CfC vs MLP)
@@ -94,11 +95,7 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 ## P1: Core Architecture Validity
 
-- [ ] **Run 011: cl_benchmark.py with fixed gradient flow** — first valid 3-way comparison
-  - Previous run 009 had zero-init adapter_out → CfC τ received zero gradient
-  - Now: `nn.init.normal_(adapter_out.weight, std=1e-3)` — gradient flows to time_a/time_b
-  - Watch τ_a_std in log: if it grows during training, liquid dynamics are activating
-  - Run: `PYTHONPATH=/neuroplastic-lfm python experiments/cl_benchmark.py`
+- [x] **Run 011 DONE** — NeuroplasticLFM AP=0.830 vs per-task LoRA AP=0.838 (gap=0.8 pts); zero-forgetting intact; wins boolq+dbpedia. τ_a_std flat (0.1675 throughout) — τ not specialising at 500 steps.
 
 - [ ] **Run 012: CfC vs MLP ablation with fixed gradient flow** — first valid ablation
   - Run 010 compared broken CfC vs MLP (τ grad = 0.000000 throughout)
