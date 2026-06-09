@@ -80,9 +80,6 @@ def train_cluster(
         loss.backward()
         torch.nn.utils.clip_grad_norm_(cluster.parameters(), 1.0)
         optimizer.step()
-        # Hard ceiling: sigmoid(0) = 0.5 → cluster contributes at most 50%
-        # of its output. Prevents the gate from replacing the base model.
-        cluster.maturity.data.clamp_(max=0.0)
 
         if step % log_every == 0:
             gate = torch.sigmoid(cluster.maturity).item()

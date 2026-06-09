@@ -23,9 +23,15 @@ class CfCCluster(nn.Module):
         self.pos_proj    = nn.Linear(1, self.CLUSTER_DIM, bias=False)
         self.cfc         = CfC(self.CLUSTER_DIM, wiring, batch_first=True, return_sequences=True)
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.BASE_DIM)
-        # Zero-init gating from LLaMA-Adapter (Zhang et al., 2023).
-        # sigmoid(-3) ≈ 0.05: small initial influence, ~20x stronger gate gradients than -6.
-        self.maturity    = nn.Parameter(torch.full((1,), -3.0))
+        # Zero-init adapter_out (LoRA-style): cluster contributes exactly 0 at step 0,
+        # preventing random noise from disrupting the base model before the CfC has
+        # learned anything useful.  Gradient still flows because cfc_out is non-zero.
+        nn.init.zeros_(self.adapter_out.weight)
+        nn.init.zeros_(self.adapter_out.bias)
+        # Gate initialized to sigmoid(0) = 0.5.  At step 0 this is irrelevant because
+        # adapter_out=0 forces delta=0.  Once adapter_out learns, sigmoid'(0)=0.25
+        # gives ~5× better gradient flow than the previous sigmoid(-3) init.
+        self.maturity    = nn.Parameter(torch.zeros(1))
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
         # hidden: (B, L, BASE_DIM) — may be bfloat16 from base model
