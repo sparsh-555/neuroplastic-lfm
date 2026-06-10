@@ -39,7 +39,19 @@ Realistic targets:
 | ICLR 2027 | ~Oct 2026 | 4 months away — achievable with focused work |
 | ICML 2027 | ~Feb 2027 | Most time, but field moves fast |
 
-**Recommendation:** Target ICLR 2027. Use the next 4 months to fix the two blockers below.
+**Recommendation:** Target ICLR 2027 (Oct 2026 deadline). Two viable paths:
+
+| | Path A — Focused | Path B — Full Vision |
+|---|---|---|
+| Scope | Grow-and-freeze + CfC on temporal tasks | + Variable cluster size + CKA merge |
+| Differentiator from HAM | CfC substrate, NLP domain | All of Path A + principled merge/prune |
+| Timeline | 4–5 weeks | 8–10 weeks |
+| Paper strength | Solid if CfC > MLP on TRACE-8 | Stronger; recovers original system vision |
+| Risk | Weak if CfC ≈ MLP on TRACE-8 | More implementation; HAM must be cited |
+
+**Recommendation: Path B.** The original vision (self-managing neuroplasticity loop) is
+the intellectual core of the project. Variable size + CKA merge are buildable in 2 weeks.
+Path A is a fallback if TRACE-8 results are disappointing.
 
 ---
 
@@ -54,8 +66,15 @@ unnecessary when the general claim is already novel.
 - Rename: `NeuroplasticLFM` → **`NeuroplasticLM`**
 - Primary claim: first recurrent, ODE-derived adapter (CfC/NCP) for CL in LLMs —
   architectural zero-forgetting + adaptive τ dynamics per token, impossible in LoRA
-- Test on LFM (done) + LLaMA-3-8B (pending) — generalization, not motivation
+- Test on LFM (done) + LLaMA-3-8B (done) — generalization confirmed on both models
 - HAM (arXiv 2509.13211) is closest prior art: LoRA substrate, vision only, no NLP
+
+**⚠️ HAM overlap warning (June 2026):** A newer HAM paper (ICLR 2026 submission) does
+adapter similarity grouping + pruning + merging for vision CL. This directly overlaps with
+the auto-dreamer concept. Differentiators: CfC substrate, NLP domain, CKA-based merge
+(vs weight-norm), activation-importance pruning (keeps high-τ neurons specifically),
+label-free inference. Must cite and explicitly differentiate if we implement merge/prune.
+See AUDIT.md Field Coverage for full comparison.
 
 **LoRA comparison note (still relevant):**
 LFM2.5-1.2B has 16 layers — 6 attention + 10 conv. LoRA targets only `q_proj/k_proj/v_proj`
@@ -121,11 +140,14 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 - [x] **Run 011 DONE** — NeuroplasticLFM AP=0.830 vs per-task LoRA AP=0.838 (gap=0.8 pts); zero-forgetting intact; wins boolq+dbpedia. τ_a_std flat (0.1675 throughout) — τ not specialising at 500 steps.
 
-- [x] **Run 012 DONE** — CfC AP=0.832 vs MLP AP=0.828 (Δ=0.004, within noise). Framing: grow-and-freeze paradigm is primary claim; CfC recommended substrate for context-heavy tasks.
+- [x] **Run 012 DONE** — CfC AP=0.832 vs MLP AP=0.828 on LFM (Δ=0.004, noise). Grow-and-freeze is primary claim.
+- [x] **Run 014 DONE** — LLaMA-3-8B: MLP AP=0.900 beats per-task LoRA (0.888) at 15× fewer params. CfC AP=0.858. MLP > CfC on classification; TRACE-8 needed for CfC claim.
+- [x] **Intelligent gate DONE** — `gate_proj = nn.Linear(base_dim, 1)` replaces scalar maturity. Per-token routing, starts nearly closed (sigmoid(-4)≈0.018), gradient persists after loss≈0.
 
-- [ ] **Gate direction** — current gate oscillates near 0.5 and doesn't open further
-  - Once loss ≈ 0, gradient on gate ≈ 0 (no signal to open further)
-  - Second-order issue; not blocking current experiments but worth investigating
+- [ ] **Run 015** — rerun LLaMA benchmark with intelligent gate to confirm CfC regression fix
+- [ ] **TRACE-8 pipeline + Run 016** — critical for CfC vs MLP on temporal tasks (Py150, NumGLUE)
+  - If CfC > MLP: τ dynamics validated, CfC paper confirmed
+  - If CfC ≈ MLP: grow-and-freeze paper; CfC is one substrate option among others
 
 - [ ] **Label-free spawning validation on 5+ tasks**
   - `sequential_tasks.py` manually calls `spawn_cluster(task_name)` — this requires knowing task boundaries
@@ -155,13 +177,37 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 ---
 
+## P2b: Self-Managing System (Original Vision — recovers architectural novelty)
+
+These two features recover the core of the original design. Together they make NeuroplasticLM
+a self-managing system rather than "frozen adapters that accumulate." Both are needed to
+differentiate from HAM (ICLR 2026), which does similarity-based grouping + pruning for vision.
+
+- [ ] **Variable cluster size**
+  - Current: fixed `CLUSTER_DIM=64` always. Every task gets identical capacity.
+  - Target: grow `AutoNCP(units, output_size=units//4)` with units ∈ {16, 32, 64, 128}
+  - Algorithm: train at units=16, eval validation loss; if not converged, grow to 32; repeat
+  - Stop when val loss plateaus or maximum size reached
+  - Result: small tasks (yelp) get tiny clusters; hard tasks (NumGLUE math) get large ones
+  - Paper claim: "task-adaptive capacity allocation" — each task gets exactly what it needs
+
+- [ ] **CKA-based merge detection** (replaces TIES-merging)
+  - Current: TIES-merging is a crude weight average. Not latent-space-based. Marginally hurts PPL.
+  - Target: after each cluster freezes, compute Centered Kernel Alignment (CKA) between its
+    64-dim internal representations and every existing frozen cluster on a 50-sample probe set
+  - If CKA(cluster_new, cluster_existing) > 0.7: merge via distillation (not weight average)
+    - Train a new merged cluster to reproduce outputs of both original clusters on their tasks
+    - Merged cluster is smaller than two separate clusters — reduces total memory
+  - If CKA < 0.3: fully novel knowledge, keep separate
+  - If 0.3 ≤ CKA < 0.7: partial overlap — keep separate but note for later merge opportunity
+  - This is the auto-dreamer's core function: intelligent, latent-space-based consolidation
+  - Differentiator from HAM: CKA on CfC hidden states measures τ-dynamics alignment, not weight norms
+
+---
+
 ## P3: Generalization and Significance
 
-- [ ] **LLaMA-3-8B run** — primary generalization evidence (framing resolved to Path A)
-  - No longer about deciding Path A vs B — that's settled. This is now a required result.
-  - Core code change: `d_model = 4096`, `inject_at = 16` (proportional mid-model), adapter dims updated
-  - Everything else — registry, spawning, TIES-merging, eval — unchanged
-  - LFM2.5-1.2B is unknown outside LiquidAI; LLaMA-3-8B result is what reviewers will trust
+- [x] **LLaMA-3-8B run** — DONE (Run 014). MLP AP=0.900, CfC AP=0.858.
 - [ ] **5 seeds + statistical significance** — t-test or Wilcoxon across seeds
   - Current 3-seed run gives ±0.01 variance; good, but formal test needed
 - [ ] **Inference latency analysis** — measure per-token latency with N=1, 3, 5 clusters active

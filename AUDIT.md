@@ -204,6 +204,47 @@ These tasks have genuine temporal dependencies where CfC's advantage should emer
 
 ---
 
+### H7 — Original vision is ~25% implemented
+
+The architecture was conceived as a **self-managing continual learning system** — a full
+neuroplasticity loop of spawn, grow, merge, and prune. Only the spawn-and-freeze phase
+exists in the codebase. The self-management features are entirely absent.
+
+| Original concept | What was built | Status |
+|---|---|---|
+| Model detects knowledge gap → spawns cluster | `adaptive_spawning.py` perplexity threshold. Failed on science stream in 2-task test. | Broken / unused |
+| Cluster size grows to fit the problem, capped maximum | Fixed `CLUSTER_DIM=64` always. No growth mechanism. | Not implemented |
+| Auto-dreamer: detect latent-space overlap between clusters → intelligent merge | `TIES-merging`: crude weight average, no similarity detection, not latent-space-based. | Crude substitute only |
+| Prune unused clusters by activation importance, shrink to highest-τ neurons | Nothing. Frozen clusters accumulate forever. | Not implemented |
+
+**Why this matters for the paper:**
+
+The full system (variable size + CKA similarity merge + activation pruning) is what
+makes NeuroplasticLM a *self-managing* system, not just "LoRA-but-frozen." It also
+directly differentiates from HAM (see Field Coverage below), which does adapter grouping
+and pruning but with LoRA substrates in vision only.
+
+The biological framing — spawn when uncertain, merge when redundant, prune when dormant —
+is the intellectual core of the project name. The paper is weaker without it.
+
+**What's buildable for ICLR 2027:**
+
+Two features that recover the most important parts of the vision without the full auto-dreamer:
+
+1. **Variable cluster size** — start at `CLUSTER_DIM=16`, run AutoNCP with increasing
+   units (16, 32, 64, 128) until validation loss plateaus. Each task gets a cluster sized
+   to its complexity. Small utility function change + training loop modification.
+
+2. **CKA-based merge detection** — after each new cluster freezes, compute Centered
+   Kernel Alignment between its 64-dim representations and all existing clusters on a
+   small held-out sample. If CKA > threshold (~0.7), merge via distillation rather than
+   TIES weight averaging. Merged cluster is smaller than two separate clusters.
+   This is the latent-space intelligence the original vision described.
+
+Pruning is harder and should be deferred to future work or a follow-up paper.
+
+---
+
 ## 🟡 Moderate Severity
 
 ### M1 — Sequential LoRA baseline is a strawman ✅ RESOLVED (Run 013)
@@ -264,13 +305,25 @@ Merged cluster PPL (2.42) is slightly worse than individual cluster PPL (2.41 sc
 - ❌ **CaLoRA (NeurIPS 2025)** — MISSED. Current SOTA. Backward knowledge transfer.
 - ❌ **InfLoRA (NeurIPS 2025)** — MISSED. Orthogonal subspace, similar to O-LoRA.
 - ❌ **SD-LoRA (NeurIPS 2025)** — MISSED. Magnitude/direction decomposition.
-- ❌ **Sparse memory fine-tuning (Oct 2025)** — only 11% F1 drop vs 71% for LoRA. Different approach but competitive result.
+- ❌ **Sparse memory fine-tuning (Oct 2025)** — only 11% F1 drop vs 71% for LoRA.
+- ⚠️ **HAM: Hierarchical Adapters Merging (ICLR 2026 submission)** — CRITICAL overlap.
+  Dynamically groups similar task adapters, prunes within groups, merges across groups.
+  Shows >4% accuracy improvement + nearly 2× efficiency gain on long task sequences.
+  *Vision domain only. LoRA substrate. No ODE dynamics.*
+  **Differentiators we must establish:** (1) CfC substrate — merging τ dynamics is more
+  principled than merging weight matrices; (2) NLP/LLM domain; (3) activation-importance
+  pruning keeps highest-τ neurons specifically; (4) label-free inference.
+  If we implement CKA merge + variable size, we must cite and differentiate from HAM.
+- ⚠️ **AIMMerging (Sep 2025)** — adaptive iterative model merging using training
+  trajectories to decide merge timing/frequency. 80% relative improvement on FWT vs SOTA.
+  Different mechanism (trajectory-based, not similarity-based) but related.
+- ⚠️ **TreeLoRA (ICML 2025)** — hierarchical gradient-similarity tree to group LoRA
+  adapters. Directly related to similarity-based adapter management.
 
-### Benchmarks we're not using:
-- ❌ Long Sequence Benchmark (CaLoRA's benchmark — Yelp/IMDB/BoolQA/MultiRec/DBpedia)
-- ❌ TRACE-8 (most common 2024-2025 benchmark)
-- ❌ Seq-GLUE
-- ✅ Our keyword-filtered Alpaca — not standard, not reproducible
+### Benchmarks:
+- ✅ Long Sequence Benchmark (5 tasks) — done, Runs 011–014
+- ✅ TRACE-8 (8 tasks including math + code) — pipeline needed, critical for CfC claim
+- ❌ Seq-GLUE, Long-CL 15 — optional, lower priority
 
 ---
 
@@ -299,21 +352,44 @@ Fix in this order — each step unblocks the next:
 4b.[DONE]     CfC vs MLP ablation Run 012 — CfC AP 0.832 vs MLP AP 0.828, Δ=0.004 (noise)
               → CfC wins boolq/dbpedia; MLP wins imdb/multirc; grow-and-freeze is the claim
 
-5. [~3 days]  Add O-LoRA as honest peer comparison (zero-forgetting guarantee)
+5. [DONE]     O-LoRA baseline — Run 013, AP 0.846, BWT 0.000
 
-6. [~2 days]  Run same core experiment on LLaMA-3-8B (d_model=4096, inject_at=16)
-              → Required generalization evidence for Path A claim
+6. [DONE]     LLaMA-3-8B benchmark + CfC vs MLP ablation — Run 014
+              → MLP AP 0.900 beats per-task LoRA (0.888) at 15× fewer params
+              → CfC AP 0.858; MLP > CfC on classification — TRACE-8 needed for CfC claim
 
-7. [~1 week]  Fix label-free spawning for 5+ tasks (adaptive_spawning end-to-end)
+7. [DONE]     Intelligent gate — gate_proj replaces scalar maturity; per-token routing
 
-8. [~3 days]  Add CaLoRA to related work; compare if feasible
+8. [~1 day]   Run 015: LLaMA benchmark with intelligent gate (rerun llama_benchmark.py)
+              → Confirm gate fix improves CfC on boolq/multirc regression
 
-9. [~2 days]  Statistical significance (5 seeds + t-test)
+9. [~1 week]  TRACE-8 pipeline + Run 016 (CfC and MLP on temporal tasks)
+              → This is the decisive experiment for the CfC claim
+              → If CfC > MLP on Py150/NumGLUE: CfC paper. If CfC ≈ MLP: grow-and-freeze paper.
 
-10. [~2 days]  Measure inference latency
+10. [~1 week] Variable cluster size (H7)
+              → AutoNCP with units in {16, 32, 64, 128}; grow until val loss plateaus
+              → Each task gets a cluster sized to its complexity
 
-11. [ongoing] Write paper (method, experiments, related work, conclusion)
-              → Paper name: NeuroplasticLM (rename codebase when results are stable)
+11. [~1 week] CKA-based merge detection (H7, replaces TIES-merging)
+              → Centered Kernel Alignment between frozen cluster representations
+              → If CKA > 0.7: merge via distillation, not weight averaging
+              → Differentiates from HAM (latent-space intelligent, not weight-norm based)
+
+12. [~3 days] O-LoRA on LLaMA; add CaLoRA to related work
+
+13. [~2 days] Statistical significance (5 seeds + t-test)
+
+14. [~2 days] Measure inference latency
+
+15. [ongoing] Write paper
+              → Path A (minimal): grow-and-freeze + CfC on temporal tasks
+              → Path B (full vision): + variable size + CKA merge; cite and differentiate HAM
 ```
 
-**Total realistic timeline to ICLR 2027 submission:** 6–8 weeks of focused work.
+**Timeline to ICLR 2027 (Oct 2026 deadline):**
+- Path A (steps 8–9 + 12–15): 4–5 weeks
+- Path B (steps 8–15 all): 8–10 weeks
+
+Path B is recommended. The auto-dreamer features are the intellectual core of the project
+and directly differentiate from HAM/TreeLoRA/AIMMerging.
