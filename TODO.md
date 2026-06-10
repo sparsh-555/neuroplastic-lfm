@@ -113,9 +113,9 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 
 ## P2: Baselines (required for paper)
 
-- [ ] **O-LoRA** — has zero-forgetting guarantee via orthogonal subspaces; most direct peer
-  - Code: `github.com/cmnfriend/O-LoRA`
-  - This is the baseline reviewers will ask about most; "sequential LoRA" will be seen as a strawman
+- [x] **O-LoRA Run 013 DONE** — AP 0.846, BWT 0.000, FWT +0.185; beats per-task LoRA by 0.8 pts
+  - NeuroplasticLFM gap: 1.6 pts AP, wins boolq (+2) and dbpedia (+5) vs O-LoRA
+  - O-LoRA uses 2.4× more params and requires task label at inference
 - [ ] **CaLoRA** (NeurIPS 2025) — PEFT-based CL with *backward* knowledge transfer; current SOTA
   - Missed in original baseline list; now the paper to beat
 - [ ] **GainLoRA** (NeurIPS 2025) — most direct structural competitor (gating on LoRA branches)

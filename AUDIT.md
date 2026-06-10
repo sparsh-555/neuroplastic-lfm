@@ -190,11 +190,15 @@ contribution.  CfC is the recommended substrate.  See run_012.md for full framin
 
 ## 🟡 Moderate Severity
 
-### M1 — Sequential LoRA baseline is a strawman
+### M1 — Sequential LoRA baseline is a strawman ✅ RESOLVED (Run 013)
 
-Our "Sequential LoRA" is the weakest possible LoRA setup: one shared adapter, trained on all tasks continuously, no protection. Against proper CL-LoRA methods (CaLoRA, O-LoRA, InfLoRA), reviewers will say we chose the easiest baseline to beat.
+O-LoRA baseline added and run. Results: O-LoRA AP=0.846, BWT=0.000, FWT=+0.185.
+NeuroplasticLFM AP=0.830 — 1.6 pts below O-LoRA but with 2.4× fewer params and no task
+label at inference. NeuroplasticLFM wins boolq (+2) and dbpedia (+5) vs O-LoRA.
 
-**Fix:** Replace or supplement sequential LoRA with O-LoRA (zero-forgetting guarantee via orthogonal subspaces). This is the honest peer comparison. If NeuroplasticLFM matches O-LoRA on forgetting but with fewer parameters and no task labels, that's a publishable result.
+The comparison table is now complete: Sequential LoRA / Per-task LoRA / O-LoRA / NeuroplasticLFM.
+Honest framing: NeuroplasticLFM is the parameter-efficient, label-free option; O-LoRA is
+the strongest AP method. Gap must be acknowledged in the paper.
 
 ---
 
