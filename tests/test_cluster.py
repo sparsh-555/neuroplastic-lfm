@@ -11,20 +11,20 @@ def test_forward_output_shape():
     assert out.shape == (2, 10, 2048)
 
 
-def test_maturity_gate_half_at_init():
+def test_gate_starts_nearly_closed():
     cluster = CfCCluster(seed=0)
-    gate = torch.sigmoid(cluster.maturity).item()
-    assert abs(gate - 0.5) < 1e-4
+    gate = torch.sigmoid(cluster.gate_proj.bias).item()
+    assert gate < 0.05  # sigmoid(-4) ≈ 0.018
 
 
 def test_output_near_zero_at_init():
     # adapter_out uses std=1e-3 init: output is small but non-zero.
     # This keeps initial noise negligible (~0.01% of residual stream magnitude)
     # while preserving gradient flow to the CfC and its τ projections.
+    # gate_proj.bias=-4 → gate≈0.018, further suppresses initial output.
     cluster = CfCCluster(seed=0)
     h = torch.randn(2, 5, 2048)
     out = cluster(h)
-    # gate=0.5, adapter_out std=1e-3 → output should be well under 0.1
     assert out.abs().max().item() < 0.1
 
 
@@ -48,7 +48,7 @@ def test_all_parameters_trainable_at_creation():
     assert len(trainable_params) > 0
     assert cluster.adapter_in.weight.requires_grad
     assert cluster.adapter_out.weight.requires_grad
-    assert cluster.maturity.requires_grad
+    assert cluster.gate_proj.weight.requires_grad
 
 
 def test_parameter_count_in_expected_range():
@@ -64,7 +64,7 @@ def test_gradient_flows_to_adapter_in():
     out.sum().backward()
     assert cluster.adapter_in.weight.grad is not None
     assert cluster.adapter_out.weight.grad is not None
-    assert cluster.maturity.grad is not None
+    assert cluster.gate_proj.weight.grad is not None
 
 
 def test_batch_size_one():
@@ -107,10 +107,10 @@ def test_mlp_output_near_zero_at_init():
     assert out.abs().max().item() < 0.1
 
 
-def test_mlp_maturity_gate_half_at_init():
+def test_mlp_gate_starts_nearly_closed():
     cluster = MLPCluster(seed=0)
-    gate = torch.sigmoid(cluster.maturity).item()
-    assert abs(gate - 0.5) < 1e-4
+    gate = torch.sigmoid(cluster.gate_proj.bias).item()
+    assert gate < 0.05  # sigmoid(-4) ≈ 0.018
 
 
 def test_mlp_gradient_flows_to_all_layers():
@@ -122,7 +122,7 @@ def test_mlp_gradient_flows_to_all_layers():
     assert cluster.ff1.weight.grad is not None
     assert cluster.ff2.weight.grad is not None
     assert cluster.adapter_out.weight.grad is not None
-    assert cluster.maturity.grad is not None
+    assert cluster.gate_proj.weight.grad is not None
     # All gradients must be non-zero (not blocked)
     assert cluster.adapter_in.weight.grad.norm().item() > 0
     assert cluster.ff1.weight.grad.norm().item() > 0

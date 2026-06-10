@@ -19,7 +19,9 @@
 - [x] Framing resolved — Path A (NeuroplasticLM general); Path B deprecated; no prior CfC-as-adapter work found
 - [x] HAM (arXiv 2509.13211) confirmed as closest prior art — LoRA substrate, vision only
 - [x] Run 010: CfC vs MLP ablation — INVALIDATED (zero-init adapter_out blocked all CfC τ gradients; broken CfC vs MLP, not liquid CfC vs MLP)
-- [x] Run 012: valid CfC vs MLP ablation — CfC AP 0.832 vs MLP AP 0.828 (Δ=0.004, noise); CfC wins boolq+dbpedia; grow-and-freeze is the primary claim
+- [x] Run 012: valid CfC vs MLP ablation on LFM — CfC AP 0.832 vs MLP AP 0.828 (Δ=0.004, noise); CfC wins boolq+dbpedia; grow-and-freeze is the primary claim
+- [x] Run 014: LLaMA-3-8B CfC vs MLP ablation — MLP AP 0.900 vs CfC AP 0.858 (Δ=−0.042); MLP beats per-task LoRA (0.888) at 15× fewer params; CfC advantage requires TRACE-8 temporal tasks
+- [x] Intelligent gate — replaced scalar `maturity` with `gate_proj = nn.Linear(base_dim, 1)`, bias=-4.0; per-token routing, gradient signal continues after loss≈0
 - [x] Gradient flow fix — nn.init.normal_(adapter_out.weight, std=1e-3) in both CfCCluster and MLPCluster; τ grad norms now 0.02–0.06
 - [x] LLaMA hook fix — model.py hook now handles tuple layer output (LlamaDecoderLayer returns (hidden, ...) not plain tensor)
 
@@ -75,7 +77,28 @@ sentence in the experimental section clarifying this for LFM-unfamiliar reviewer
 - Task 4: MultiRec (question answering)
 - Task 5: DBpedia (topic classification)
 
-Or TRACE-8 (8 tasks, more common in 2025 papers).
+Or **TRACE-8** (8 tasks, more common in 2024-2026 papers — arXiv 2310.06762, NeurIPS 2024 datasets track):
+
+| # | Task | Domain | Why it's hard |
+|---|---|---|---|
+| 1 | ScienceQA | Multi-hop science QA (elementary/high school) | Multi-step reasoning chains, doesn't converge at step 100 |
+| 2 | FOMC | Federal Reserve forward guidance prediction | Specialized financial vocabulary, domain shift |
+| 3 | MeetingBank | Meeting summarization | Long contexts, temporal structure |
+| 4 | C-STANCE | Chinese zero-shot stance detection (Sina Weibo) | Cross-lingual, novel token distribution |
+| 5 | 20Minuten | German news summarization | Multilingual, long sequences |
+| 6 | Py150 | Python code completion (150K programs from GitHub) | Long programs, strict sequential syntax dependencies |
+| 7 | NumGLUE-T1 | Math word problems | Multi-step arithmetic, LLaMA2-chat 13B: 28.8%→2% after sequential training |
+| 8 | NumGLUE-T2 | Math word problems (variant) | Same — catastrophic forgetting even on strong models |
+
+TRACE key result: aligned LLMs exhibit **significant forgetting even with instruction tuning**.
+LLaMA2-chat 13B gsm8k: 28.8% → 2% after sequential training on TRACE datasets.
+This creates the sustained gradient signal that activates τ specialization in CfC.
+
+**Why TRACE-8 is required for the CfC story:**
+On current benchmark (classification), MLP beats CfC by 4.2 AP (Run 014). CfC's ODE τ
+dynamics are overhead on position-invariant tasks. On Py150 (code) and NumGLUE (math),
+sequential structure is strict — early tokens constrain valid continuations. CfC's per-position
+time constants should provide measurable advantage here.
 
 **Metrics to implement:**
 - **AP** (Average Performance): `1/T × Σ Acc_{T,Ti}` — mean accuracy across all tasks after final task
@@ -116,11 +139,19 @@ Expected output: LoRA forgetting compounds over 5 tasks; per-task LoRA and Neuro
 - [x] **O-LoRA Run 013 DONE** — AP 0.846, BWT 0.000, FWT +0.185; beats per-task LoRA by 0.8 pts
   - NeuroplasticLFM gap: 1.6 pts AP, wins boolq (+2) and dbpedia (+5) vs O-LoRA
   - O-LoRA uses 2.4× more params and requires task label at inference
-- [ ] **CaLoRA** (NeurIPS 2025) — PEFT-based CL with *backward* knowledge transfer; current SOTA
-  - Missed in original baseline list; now the paper to beat
-- [ ] **GainLoRA** (NeurIPS 2025) — most direct structural competitor (gating on LoRA branches)
+- [ ] **O-LoRA on LLaMA** — run `experiments/olora_baseline.py` with LLaMA loader; key question: does gap narrow on larger model?
+- [ ] **CaLoRA** (NeurIPS 2025) — current SOTA for PEFT-based CL, backward knowledge transfer via PaCA (parameter-level causal attribution)
+- [ ] **GainLoRA** (NeurIPS 2025) — most direct structural competitor (gating on LoRA branches); search GitHub before implementing
 - [ ] **EWC-LoRA** (ICLR 2026) — `github.com/Yaoyz96/low-rank-cl`
-- [ ] **InfLoRA** / **SD-LoRA** — NeurIPS 2025 orthogonal LoRA variants (brief comparison or mention in related work)
+- [ ] **OA-Adapter** (ICLR 2026) — dynamic orthogonal subspace adapter; related to O-LoRA but adaptive
+- [ ] **InfLoRA** / **SD-LoRA** (NeurIPS 2025) — orthogonal LoRA variants; mention in related work is sufficient
+- [ ] **ELLA** (NeurIPS 2025) — subspace decorrelation for adapters; related work mention
+
+**2025–2026 benchmark landscape (from web search June 2026):**
+- Std-CL 5: same as Long Sequence Benchmark (5 tasks, classification)
+- Seq-GLUE 7: 7 GLUE tasks in sequence
+- Long-CL 15: 15-task version of Seq-GLUE
+- **TRACE-8**: hardest, 8 tasks including math+code — use this for CfC advantage experiments
 
 ---
 

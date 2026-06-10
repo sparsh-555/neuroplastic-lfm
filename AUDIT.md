@@ -88,18 +88,24 @@ This is stronger than our claim (we only guarantee zero forgetting, CaLoRA claim
 
 ---
 
-### H2 — Maturity gate is going in the wrong direction
+### H2 — Gate redesigned: input-conditioned per-token routing ✅ RESOLVED
 
-**Current behavior:** Gate logit starts at -3 (sigmoid ≈ 0.047) and decreases to -3.5 (sigmoid ≈ 0.031) over 1000 training steps.
+**Prior issue:** Scalar `maturity = nn.Parameter(zeros(1))` → gate oscillated near 0.5 and provided
+no gradient signal once average loss ≈ 0. A global scalar cannot route selectively by token.
 
-**What this means:** The cluster injects *less* as training proceeds. The injection signal weakens by ~35% over training.
+**Fix (June 2026):** Replaced with `gate_proj = nn.Linear(base_dim, 1)`:
+- Weight zero-init + bias=-4 → starts nearly closed (sigmoid(-4) ≈ 0.018)
+- Per-token gate: `gate = sigmoid(gate_proj(hidden))` — (B, L, 1) shape
+- Each token independently decides how much cluster output to mix in
+- Gate continues to receive gradient after average loss ≈ 0, because different tokens have
+  different optimal gate values — sentiment-bearing tokens open more than function words
 
-**The problem:** A gate named "maturity" should open as the cluster matures, not close. A decreasing gate suggests the cluster is learning to suppress its own contribution — possibly because the base model's residual stream already captures most of what's needed and the cluster's corrections become noise.
+**Why this matters for CfC regression on LLaMA:** The old gate started at 0.5 → the
+under-trained cluster contributed 50% from step 1, adding noise to LLaMA's strong
+zero-shot representations (boolq 0.830). The new gate starts at 1.8% contribution
+and earns its influence token by token as training proceeds.
 
-**Options:**
-1. Rename to "dampening gate" and argue that a small, precision correction is better than a large, noisy one (the cluster learns to be minimally invasive)
-2. Redesign the gate initialization so gradient pressure opens it: start at +3, let training decide direction
-3. Investigate whether the cluster is learning at all or just passively decaying
+**Run 015** will be the first result with the intelligent gate on LLaMA.
 
 ---
 
@@ -175,16 +181,26 @@ AP = 0.838 — gap collapsed from 4.4 pts (run 009) to **0.8 pts**.  Zero-forget
 τ is NOT specialising at this training scale.  CfC runs as a fixed-τ recurrent feature extractor.
 Gradients DO flow (norm 0.02–0.06) but divergence signal is too weak at 500 steps.
 
-**Run 012 result (valid ablation):** CfC AP = **0.832** vs MLP AP = **0.828** — Δ = +0.004,
-below the noise threshold.  CfC ≈ MLP at 500 steps.  Per-task: CfC wins boolq (+5 pts)
-and dbpedia (+3 pts); MLP wins imdb (+4 pts) and multirc (+2 pts).  CfC has a structural
-advantage on context-heavy tasks even with near-fixed τ.
+**Run 012 result (valid ablation on LFM):** CfC AP = **0.832** vs MLP AP = **0.828** — Δ = +0.004,
+within noise.  CfC ≈ MLP on LFM's easy classification benchmark.
 
-**Revised primary claim:** The grow-and-freeze paradigm (not CfC specifically) is the
-contribution.  CfC is the recommended substrate.  See run_012.md for full framing.
+**Run 014 result (LLaMA-3-8B ablation):** CfC AP = **0.858** vs MLP AP = **0.900** — Δ = −0.042.
+MLP outperforms CfC by 4.2 AP points on LLaMA.  MLP also beats per-task LoRA (0.888) at 15×
+fewer params with no task labels.
+
+**Why MLP beats CfC on LLaMA:** These are position-invariant classification tasks (sentiment,
+topic). CfC's ODE τ dynamics specialize neurons to different sequence positions — useful for
+temporally-structured tasks (code, math) but overhead for classification. MLP is the cleaner
+function approximator here.
+
+**Revised primary claim:** The grow-and-freeze paradigm is the contribution.  MLP is the
+recommended substrate for classification; CfC for temporal tasks (TRACE-8 math/code pending).
 
 **One valid finding from run 010:** Training speed — CfC is ~4× slower than MLP per step
 (5.2 vs 20.5 it/s).  This is a real cost regardless of whether τ learns.
+
+**Required next experiment:** TRACE-8 (Py150 code, NumGLUE math) on both CfC and MLP.
+These tasks have genuine temporal dependencies where CfC's advantage should emerge.
 
 ---
 

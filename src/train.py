@@ -45,14 +45,14 @@ def train_cluster(
     log_every: int = 50,
 ) -> List[Dict]:
     cluster = model.registry.get(task_id)
-    # Maturity gate gets 5× higher lr so it can open faster than the adapter weights.
-    maturity_params = [cluster.maturity]
-    other_params    = [p for n, p in cluster.named_parameters()
-                       if p.requires_grad and n != "maturity"]
+    # Gate projection gets 5× higher lr so routing decisions update faster than adapter weights.
+    gate_params  = list(cluster.gate_proj.parameters())
+    other_params = [p for n, p in cluster.named_parameters()
+                    if p.requires_grad and not n.startswith("gate_proj")]
     optimizer = torch.optim.AdamW(
         [
-            {"params": other_params,    "lr": lr},
-            {"params": maturity_params, "lr": lr * 5},
+            {"params": other_params, "lr": lr},
+            {"params": gate_params,  "lr": lr * 5},
         ],
         weight_decay=0.01,
     )
@@ -84,7 +84,7 @@ def train_cluster(
         optimizer.step()
 
         if step % log_every == 0:
-            gate = torch.sigmoid(cluster.maturity).item()
+            gate = torch.sigmoid(cluster.gate_proj.bias).item()
             τ_info = extract_tau_stats(cluster)
             record = {"step": step, "loss": loss.item(), "gate": gate, **τ_info}
             history.append(record)

@@ -39,32 +39,41 @@ class CfCCluster(nn.Module):
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.base_dim)
         nn.init.normal_(self.adapter_out.weight, std=1e-3)
         nn.init.zeros_(self.adapter_out.bias)
-        self.maturity    = nn.Parameter(torch.zeros(1))
+        # Input-conditioned gate: per-token routing based on the hidden state.
+        # Weight zero-init + large negative bias → gate starts nearly closed
+        # (sigmoid(-4) ≈ 0.018) so the cluster earns its contribution gradually.
+        # Unlike a scalar maturity gate, different tokens get different gate values,
+        # so gradient signal continues even after average loss ≈ 0: the gate learns
+        # which token positions the cluster can improve vs. leave to the base model.
+        self.gate_proj   = nn.Linear(self.base_dim, 1, bias=True)
+        nn.init.zeros_(self.gate_proj.weight)
+        nn.init.constant_(self.gate_proj.bias, -4.0)
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
         # hidden: (B, L, base_dim) — may be bfloat16 from base model
-        h = hidden.float()
-        x = self.adapter_in(h)                                       # (B, L, CLUSTER_DIM)
+        h    = hidden.float()
+        gate = torch.sigmoid(self.gate_proj(h))                      # (B, L, 1) per-token
+        x    = self.adapter_in(h)                                    # (B, L, CLUSTER_DIM)
         B, L, _ = x.shape
-        pos = torch.linspace(0.0, 1.0, L, device=x.device, dtype=x.dtype).view(1, L, 1)
-        x = x + self.pos_proj(pos)                                   # (B, L, CLUSTER_DIM)
-        h0 = torch.zeros(B, self.CLUSTER_DIM, device=x.device, dtype=x.dtype)
+        pos  = torch.linspace(0.0, 1.0, L, device=x.device, dtype=x.dtype).view(1, L, 1)
+        x    = x + self.pos_proj(pos)                                # (B, L, CLUSTER_DIM)
+        h0   = torch.zeros(B, self.CLUSTER_DIM, device=x.device, dtype=x.dtype)
         out, _ = self.cfc(x, h0)                                     # (B, L, MOTOR_DIM)
-        delta = self.adapter_out(out)                                 # (B, L, base_dim)
-        return (torch.sigmoid(self.maturity) * delta).to(hidden.dtype)
+        delta  = self.adapter_out(out)                               # (B, L, base_dim)
+        return (gate * delta).to(hidden.dtype)
 
 
 class MLPCluster(nn.Module):
     """
     Ablation baseline for CfCCluster.  Replaces the recurrent CfC block with a
     2-layer feed-forward network of identical input/output dimensions.  Both
-    classes share: adapter_in, pos_proj, adapter_out, and maturity gate — so the
+    classes share: adapter_in, pos_proj, adapter_out, and input-conditioned gate — so the
     only variable is the processing block (CfC ODE dynamics vs. static MLP).
 
     Uses the same small-random adapter_out init as CfCCluster so both start with
     near-zero output and identical gradient flow conditions.
 
-    Approximate param count (base_dim=2048): ~171K vs CfCCluster ~187K.
+    Approximate param count (base_dim=2048): ~173K vs CfCCluster ~189K.
     """
     CLUSTER_DIM = 64
     MOTOR_DIM   = 16
@@ -79,15 +88,18 @@ class MLPCluster(nn.Module):
         self.adapter_out = nn.Linear(self.MOTOR_DIM, self.base_dim)
         nn.init.normal_(self.adapter_out.weight, std=1e-3)
         nn.init.zeros_(self.adapter_out.bias)
-        self.maturity    = nn.Parameter(torch.zeros(1))
+        self.gate_proj   = nn.Linear(self.base_dim, 1, bias=True)
+        nn.init.zeros_(self.gate_proj.weight)
+        nn.init.constant_(self.gate_proj.bias, -4.0)
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
-        h = hidden.float()
-        x = self.adapter_in(h)                                       # (B, L, CLUSTER_DIM)
+        h    = hidden.float()
+        gate = torch.sigmoid(self.gate_proj(h))                      # (B, L, 1) per-token
+        x    = self.adapter_in(h)                                    # (B, L, CLUSTER_DIM)
         B, L, _ = x.shape
-        pos = torch.linspace(0.0, 1.0, L, device=x.device, dtype=x.dtype).view(1, L, 1)
-        x = x + self.pos_proj(pos)
-        x = torch.nn.functional.gelu(self.ff1(x))                   # (B, L, CLUSTER_DIM)
-        out = self.ff2(x)                                            # (B, L, MOTOR_DIM)
+        pos  = torch.linspace(0.0, 1.0, L, device=x.device, dtype=x.dtype).view(1, L, 1)
+        x    = x + self.pos_proj(pos)
+        x    = torch.nn.functional.gelu(self.ff1(x))                # (B, L, CLUSTER_DIM)
+        out  = self.ff2(x)                                           # (B, L, MOTOR_DIM)
         delta = self.adapter_out(out)                                # (B, L, base_dim)
-        return (torch.sigmoid(self.maturity) * delta).to(hidden.dtype)
+        return (gate * delta).to(hidden.dtype)

@@ -6,7 +6,7 @@ The only variable is the processing block inside the adapter:
   - CfCCluster: recurrent ODE-derived CfC cells wired by AutoNCP (~187K params)
   - MLPCluster:  2-layer feed-forward (adapter_in → GELU → ff2 → adapter_out) (~171K params)
 
-Shared design: same adapter_in/out dims, same zero-init adapter_out, same maturity gate.
+Shared design: same adapter_in/out dims, same zero-init adapter_out, same input-conditioned gate.
 
 This answers: do the CfC τ dynamics contribute beyond what a static MLP provides?
   - If CfC > MLP on AP: τ dynamics are doing real work, CfC substrate is justified
