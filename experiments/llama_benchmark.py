@@ -27,6 +27,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src.benchmark import TASK_ORDER, build_cl_dataloaders, evaluate_accuracy
 from src.cl_metrics import CLMetrics, compute_cl_metrics, format_metrics_table
+from src.cluster import MLPCluster
 from src.model import NeuroplasticLFM
 from src.train import train_cluster
 
@@ -213,14 +214,25 @@ def run_neuroplastic(
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-def main():
+def main(mlp_only: bool = False):
+    """
+    mlp_only=True: skip experiments 1-3, run only MLP ablation (experiment 4).
+    Use when experiments 1-3 already completed and only the MLP run crashed.
+    Pass known results from prior run as hardcoded matrices below.
+
+    CLI: python experiments/llama_benchmark.py --mlp-only
+    """
+    import sys
+    if "--mlp-only" in sys.argv:
+        mlp_only = True
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
     print(f"Model:  {MODEL_NAME}  (base_dim={BASE_DIM}, inject_at={INJECT_AT})")
 
     print(f"\nLoading {MODEL_NAME} …")
     base = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, torch_dtype=torch.bfloat16
+        MODEL_NAME, dtype=torch.bfloat16
     ).to(device)
     tok = AutoTokenizer.from_pretrained(MODEL_NAME)
     if tok.pad_token is None:
@@ -232,53 +244,80 @@ def main():
         batch_size=BATCH_SIZE, max_length=MAX_LENGTH,
     )
 
-    print("\n── Zero-shot baseline (frozen LLaMA-3-8B, no adapters) ──")
-    baseline_accs: Dict[str, float] = {}
-    for task in TASK_ORDER:
-        acc = evaluate_accuracy(base, eval_dls[task], label_tids[task], device)
-        baseline_accs[task] = acc
-        print(f"  {task:10s}: {acc:.3f}")
+    if mlp_only:
+        # Results from the partial run that completed before the crash
+        baseline_accs = {"yelp": 0.940, "imdb": 0.870, "boolq": 0.830,
+                         "multirc": 0.660, "dbpedia": 0.800}
+        seq_lora_matrix = [
+            {"yelp": 0.960},
+            {"yelp": 0.960, "imdb": 0.900},
+            {"yelp": 0.930, "imdb": 0.910, "boolq": 0.870},
+            {"yelp": 0.950, "imdb": 0.900, "boolq": 0.860, "multirc": 0.710},
+            {"yelp": 0.960, "imdb": 0.880, "boolq": 0.890, "multirc": 0.690, "dbpedia": 0.960},
+        ]
+        pertask_lora_matrix = [
+            {"yelp": 0.960},
+            {"yelp": 0.960, "imdb": 0.870},
+            {"yelp": 0.960, "imdb": 0.870, "boolq": 0.860},
+            {"yelp": 0.960, "imdb": 0.870, "boolq": 0.860, "multirc": 0.780},
+            {"yelp": 0.960, "imdb": 0.870, "boolq": 0.860, "multirc": 0.780, "dbpedia": 0.970},
+        ]
+        nplm_cfc_matrix = [
+            {"yelp": 0.940},
+            {"yelp": 0.940, "imdb": 0.920},
+            {"yelp": 0.940, "imdb": 0.920, "boolq": 0.800},
+            {"yelp": 0.940, "imdb": 0.920, "boolq": 0.800, "multirc": 0.650},
+            {"yelp": 0.940, "imdb": 0.920, "boolq": 0.800, "multirc": 0.650, "dbpedia": 0.980},
+        ]
+        print("\n(--mlp-only: skipping experiments 1-3, using results from prior run)")
+    else:
+        print("\n── Zero-shot baseline (frozen LLaMA-3-8B, no adapters) ──")
+        baseline_accs: Dict[str, float] = {}
+        for task in TASK_ORDER:
+            acc = evaluate_accuracy(base, eval_dls[task], label_tids[task], device)
+            baseline_accs[task] = acc
+            print(f"  {task:10s}: {acc:.3f}")
 
-    # ── Sequential LoRA ───────────────────────────────────────────────────────
-    print(f"\n{'═'*60}")
-    print("EXPERIMENT 1: Sequential LoRA")
-    print(f"{'═'*60}")
-    seq_lora_matrix = run_sequential_lora(base, train_dls, eval_dls, label_tids, device)
+        # ── Sequential LoRA ───────────────────────────────────────────────────────
+        print(f"\n{'═'*60}")
+        print("EXPERIMENT 1: Sequential LoRA")
+        print(f"{'═'*60}")
+        seq_lora_matrix = run_sequential_lora(base, train_dls, eval_dls, label_tids, device)
 
-    print("\nReloading base model for per-task LoRA …")
-    del base
-    torch.cuda.empty_cache()
-    base = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, torch_dtype=torch.bfloat16
-    ).to(device)
+        print("\nReloading base model for per-task LoRA …")
+        del base
+        torch.cuda.empty_cache()
+        base = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME, dtype=torch.bfloat16
+        ).to(device)
 
-    # ── Per-task LoRA ─────────────────────────────────────────────────────────
-    print(f"\n{'═'*60}")
-    print("EXPERIMENT 2: Per-task LoRA")
-    print(f"{'═'*60}")
-    pertask_lora_matrix = run_pertask_lora(base, train_dls, eval_dls, label_tids, device)
+        # ── Per-task LoRA ─────────────────────────────────────────────────────────
+        print(f"\n{'═'*60}")
+        print("EXPERIMENT 2: Per-task LoRA")
+        print(f"{'═'*60}")
+        pertask_lora_matrix = run_pertask_lora(base, train_dls, eval_dls, label_tids, device)
 
-    print("\nReloading base model for NeuroplasticLM …")
-    del base
-    torch.cuda.empty_cache()
-    base = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, torch_dtype=torch.bfloat16
-    ).to(device)
+        print("\nReloading base model for NeuroplasticLM …")
+        del base
+        torch.cuda.empty_cache()
+        base = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME, dtype=torch.bfloat16
+        ).to(device)
 
-    # ── NeuroplasticLM CfC on LLaMA-3-8B ────────────────────────────────────
-    print(f"\n{'═'*60}")
-    print("EXPERIMENT 3: NeuroplasticLM — CfC cluster (recurrent ODE adapter)")
-    print(f"{'═'*60}")
-    nplm_cfc_matrix = run_neuroplastic(
-        base, train_dls, eval_dls, label_tids, device,
-        cluster_cls=None, label="NeuroplasticLM-CfC",
-    )
+        # ── NeuroplasticLM CfC on LLaMA-3-8B ────────────────────────────────────
+        print(f"\n{'═'*60}")
+        print("EXPERIMENT 3: NeuroplasticLM — CfC cluster (recurrent ODE adapter)")
+        print(f"{'═'*60}")
+        nplm_cfc_matrix = run_neuroplastic(
+            base, train_dls, eval_dls, label_tids, device,
+            cluster_cls=None, label="NeuroplasticLM-CfC",
+        )
 
     print("\nReloading base model for MLP ablation …")
     del base
     torch.cuda.empty_cache()
     base = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, torch_dtype=torch.bfloat16
+        MODEL_NAME, dtype=torch.bfloat16
     ).to(device)
 
     # ── NeuroplasticLM MLP ablation on LLaMA-3-8B ────────────────────────────
